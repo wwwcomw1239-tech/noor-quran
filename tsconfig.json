@@ -1,0 +1,48 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
+    "module": "ESNext",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "skipLibCheck": true,
+    "types": [
+      "vite/client",
+      "node"
+    ],
+    "moduleResolution": "bundler",
+    "baseUrl": ".",
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "allowJs": true,
+    "jsx": "react-jsx",
+    "paths": {
+      "@/*": [
+        "./*"
+      ],
+      "lucide-react": [
+        "./node_modules/lucide-react/dist/lucide-react.d.ts"
+      ],
+      "vite": [
+        "./node_modules/vite/dist/node/index.d.ts"
+      ],
+      "@vitejs/plugin-react": [
+        "./node_modules/@vitejs/plugin-react/dist/index.d.ts"
+      ]
+    },
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "vite.config.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

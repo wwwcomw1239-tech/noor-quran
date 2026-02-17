@@ -1,0 +1,39 @@
+/* Global Height & Overscroll Fixes */
+:root {
+    font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+    color-scheme: dark;
+}
+
+html,
+body {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    /* Prevent global scrollbar */
+    background-color: #000;
+    user-select: none;
+    /* App-like feel */
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
+    /* Prevent bounce */
+}
+
+#root {
+    height: 100%;
+    width: 100%;
+    overflow-y: auto;
+    /* Allow scrolling within the app container if needed */
+    overscroll-behavior-y: none;
+}
+
+/* Custom Scrollbar Hiding */
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+
+.no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
