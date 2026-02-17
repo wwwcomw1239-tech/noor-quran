@@ -41,6 +41,258 @@ import { getRamadanStatus } from './utils/date';
 
 // --- Helper Components ---
 
+// --- SurahView (Extracted to prevent remounting flicker) ---
+
+interface SurahViewProps {
+  activeSurah: SurahDetails | null;
+  scrollToAyah: number | null;
+  setScrollToAyah: (v: number | null) => void;
+  settings: UserSettings;
+  currentTheme: any;
+  user: UserProfile | null;
+  setUser: React.Dispatch<React.SetStateAction<UserProfile | null>>;
+  playSurah: (surahDetails: SurahDetails, startIndex?: number) => void;
+  toggleBookmark: (ayah: Ayah) => void;
+  handlePageRead: (pageNumber: number) => void;
+  audioQueue: Ayah[];
+  currentAudioIndex: number;
+  isPlaying: boolean;
+  setView: (v: ViewState) => void;
+}
+
+const SurahView: React.FC<SurahViewProps> = ({
+  activeSurah,
+  scrollToAyah,
+  setScrollToAyah,
+  settings,
+  currentTheme,
+  user,
+  setUser,
+  playSurah,
+  toggleBookmark,
+  handlePageRead,
+  audioQueue,
+  currentAudioIndex,
+  isPlaying,
+  setView,
+}) => {
+  // State for Virtualization / Lazy Loading
+  const initialCount = scrollToAyah ? Math.min(scrollToAyah + 20, activeSurah?.ayahs.length || 20) : 20;
+  const [visibleCount, setVisibleCount] = useState(initialCount);
+  const bottomSentinelRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll effect
+  useEffect(() => {
+    if (scrollToAyah && scrollToAyah > visibleCount) {
+      setVisibleCount(scrollToAyah + 10);
+    }
+
+    if (scrollToAyah && activeSurah) {
+      const timer = setTimeout(() => {
+        const element = document.getElementById(`ayah-${scrollToAyah}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        setScrollToAyah(null);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [activeSurah, scrollToAyah, visibleCount, setScrollToAyah]);
+
+  // Load More Observer
+  useEffect(() => {
+    const sentinel = bottomSentinelRef.current;
+    if (!sentinel || !activeSurah) return;
+
+    const loadMoreObserver = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        setVisibleCount(prev => Math.min(prev + 20, activeSurah.ayahs.length));
+      }
+    }, { rootMargin: '400px' });
+
+    loadMoreObserver.observe(sentinel);
+    return () => loadMoreObserver.disconnect();
+  }, [activeSurah, visibleCount]);
+
+  // Intersection Observer for Automatic Tracking
+  const observer = useRef<IntersectionObserver | null>(null);
+  const lastReadRef = useRef<{ surah: number, ayah: number } | null>(null);
+
+  // Keep lastReadRef in sync with the latest user prop (especially on initial mount)
+  useEffect(() => {
+    if (user?.lastRead) {
+      lastReadRef.current = user.lastRead;
+    }
+  }, [user?.lastRead?.surah, user?.lastRead?.ayah]);
+
+  useEffect(() => {
+    if (observer.current) observer.current.disconnect();
+    if (!activeSurah) return;
+
+    const handleIntersect = (entries: IntersectionObserverEntry[]) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          const pageAttr = entry.target.getAttribute('data-page');
+          const ayahAttr = entry.target.getAttribute('data-ayah');
+
+          if (pageAttr) {
+            handlePageRead(parseInt(pageAttr));
+          }
+
+          if (ayahAttr) {
+            const ayahNum = parseInt(ayahAttr);
+            const surahNum = activeSurah.number;
+            lastReadRef.current = { surah: surahNum, ayah: ayahNum };
+
+            if (user) {
+              const currentUserStr = localStorage.getItem('noor_user');
+              if (currentUserStr) {
+                const currentUser = JSON.parse(currentUserStr);
+                currentUser.lastRead = { surah: surahNum, ayah: ayahNum };
+                localStorage.setItem('noor_user', JSON.stringify(currentUser));
+              }
+            }
+          }
+        }
+      });
+    };
+
+    observer.current = new IntersectionObserver(handleIntersect, {
+      threshold: 0.6,
+      rootMargin: '-30% 0px -40% 0px'
+    });
+
+    const ayahElements = document.querySelectorAll('.ayah-container');
+    ayahElements.forEach(el => observer.current?.observe(el));
+
+    return () => observer.current?.disconnect();
+  }, [activeSurah, visibleCount, handlePageRead, user]);
+
+  // Sync Ref to State + localStorage on Unmount
+  useEffect(() => {
+    return () => {
+      if (lastReadRef.current) {
+        // Sync to React state
+        setUser(prev => {
+          if (!prev) return prev;
+          const updated = { ...prev, lastRead: lastReadRef.current! };
+          // Also persist to localStorage so it survives page reloads
+          localStorage.setItem('noor_user', JSON.stringify(updated));
+          return updated;
+        });
+      }
+    };
+  }, [setUser]);
+
+  if (!activeSurah) return (
+    <div className="flex justify-center items-center py-20">
+      <div className={`animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 ${currentTheme.text.replace('text-', 'border-')}`}></div>
+    </div>
+  );
+
+  const fontSizeClass = {
+    'small': 'text-sm',
+    'medium': 'text-base',
+    'large': 'text-lg',
+    'xl': 'text-xl'
+  }[settings.fontSize];
+
+  const arabicFontSizeClass = {
+    'small': 'text-2xl',
+    'medium': 'text-4xl',
+    'large': 'text-5xl',
+    'xl': 'text-6xl'
+  }[settings.fontSize];
+
+  const fontFamilyClass = settings.fontFamily === 'Lateef' ? 'font-quran' : 'font-arabic';
+  const playingAyahNumber = currentAudioIndex >= 0 ? audioQueue[currentAudioIndex]?.number : null;
+  const displayedAyahs = activeSurah.ayahs.slice(0, visibleCount);
+
+  return (
+    <div className="h-full overflow-y-auto pb-24 relative no-scrollbar">
+      {/* Fixed Header */}
+      <div className="fixed top-0 left-0 right-0 mx-auto w-full max-w-md h-20 bg-black/90 backdrop-blur-xl border-b border-white/5 z-50 flex items-center px-4 justify-between">
+        <button onClick={() => setView('surahList')} className="p-2 hover:bg-white/10 rounded-full">
+          <ChevronLeft />
+        </button>
+        <div className="text-center">
+          <h2 className="font-bold">{activeSurah.englishName}</h2>
+          <span className="text-xs text-white/50 font-arabic">{activeSurah.name}</span>
+        </div>
+        <button
+          onClick={() => playSurah(activeSurah)}
+          className={`p-2 rounded-full ${currentTheme.bg} text-black hover:opacity-90 transition-opacity`}
+          aria-label="Play Surah"
+        >
+          <Play size={18} fill="currentColor" className="ml-0.5" />
+        </button>
+      </div>
+
+      {/* Content */}
+      <div className="pt-24 px-4 space-y-6 animate-fade-in">
+        {/* Bismillah */}
+        <div className="flex justify-center py-8 opacity-80">
+          <span className="font-quran text-4xl">بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ</span>
+        </div>
+
+        {displayedAyahs.map((ayah, idx) => (
+          <div
+            key={ayah.number}
+            id={`ayah-${ayah.numberInSurah}`}
+            data-page={ayah.page}
+            data-ayah={ayah.numberInSurah}
+            className={`ayah-container py-6 border-b border-white/5 transition-colors duration-500 ${playingAyahNumber === ayah.number ? `${currentTheme.bg} bg-opacity-10 rounded-xl px-2` : ''} ${scrollToAyah === ayah.numberInSurah ? 'bg-white/5 rounded-xl px-2' : ''}`}
+          >
+            {/* Actions Bar */}
+            <div className="flex justify-between items-center mb-4 px-2">
+              <span className={`${currentTheme.bg} bg-opacity-10 ${currentTheme.text} text-xs px-2 py-1 rounded-full border ${currentTheme.border} border-opacity-20`}>
+                {activeSurah.number}:{ayah.numberInSurah} | Pg {ayah.page}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => playSurah(activeSurah, idx)}
+                  className={`p-2 text-white/40 hover:${currentTheme.text} transition-colors`}
+                >
+                  {playingAyahNumber === ayah.number && isPlaying ? <Pause size={18} /> : <Play size={18} />}
+                </button>
+                <button onClick={() => toggleBookmark(ayah)} className={`p-2 transition-colors ${user?.bookmarks.some(b => b.id === ayah.number) ? currentTheme.text : `text-white/40 hover:${currentTheme.text}`}`}>
+                  <Bookmark size={18} fill={user?.bookmarks.some(b => b.id === ayah.number) ? "currentColor" : "none"} />
+                </button>
+              </div>
+            </div>
+
+            {/* Arabic */}
+            <p className={`${fontFamilyClass} text-right ${arabicFontSizeClass} leading-[2.2] mb-6 px-1`}>
+              {ayah.text}
+            </p>
+
+            {/* Translation/Transliteration */}
+            <div className="space-y-2 px-1">
+              {settings.showTransliteration && (
+                <p className={`${currentTheme.text} opacity-60 text-sm font-light italic mb-2`}>
+                  {ayah.translations?.transliteration}
+                </p>
+              )}
+              {settings.showTranslation && (
+                <p className={`text-white/90 font-sans leading-relaxed ${fontSizeClass}`}>
+                  {ayah.translations?.en}
+                </p>
+              )}
+            </div>
+          </div>
+        ))}
+
+        {/* Load More Sentinel */}
+        {visibleCount < activeSurah.ayahs.length && (
+          <div ref={bottomSentinelRef} className="h-20 flex justify-center items-center">
+            <LoadingSpinner colorClass="text-white/20" />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 interface GlassCardProps {
   children?: React.ReactNode;
   className?: string;
@@ -401,23 +653,29 @@ export default function App() {
     setView('home');
   };
 
-  const handleSurahClick = async (surahNumber: number) => {
+  const handleSurahClick = async (surahNumber: number, startAyah?: number) => {
+    const ayah = startAyah || 1;
     if (user) {
       const updatedUser = {
         ...user,
-        lastRead: { surah: surahNumber, ayah: 1 }
+        lastRead: { surah: surahNumber, ayah }
       };
       setUser(updatedUser);
       localStorage.setItem('noor_user', JSON.stringify(updatedUser));
     }
+    // Set scroll target before navigating so SurahView picks it up on mount
+    if (startAyah && startAyah > 1) {
+      setScrollToAyah(startAyah);
+    }
+    // Navigate immediately so the user sees the surah view (with loading spinner)
+    setActiveSurah(null);
+    setView('surah');
     const details = await fetchSurahDetails(surahNumber);
     setActiveSurah(details);
-    setView('surah');
   };
 
   const handleBookmarkClick = async (bookmark: BookmarkType) => {
-    await handleSurahClick(bookmark.surahNumber);
-    setScrollToAyah(bookmark.ayahNumber);
+    await handleSurahClick(bookmark.surahNumber, bookmark.ayahNumber);
   };
 
   const toggleBookmark = (ayah: Ayah) => {
@@ -878,11 +1136,7 @@ export default function App() {
           </div>
 
           <GlassCard onClick={() => {
-            handleSurahClick(user?.lastRead?.surah || 1);
-            // The scroll logic is handled in handleSurahClick / SurahView effect
-            if (user?.lastRead?.ayah) {
-              setScrollToAyah(user.lastRead.ayah);
-            }
+            handleSurahClick(user?.lastRead?.surah || 1, user?.lastRead?.ayah || 1);
           }} className="group relative overflow-hidden p-0">
             <div className={`absolute inset-0 bg-gradient-to-r ${currentTheme.gradient} opacity-0 group-hover:opacity-10 transition-opacity duration-700`}></div>
 
@@ -996,188 +1250,7 @@ export default function App() {
     );
   };
 
-  const SurahView = () => {
-    // Auto-scroll effect
-    useEffect(() => {
-      if (scrollToAyah && activeSurah) {
-        const timer = setTimeout(() => {
-          const element = document.getElementById(`ayah-${scrollToAyah}`);
-          if (element) {
-            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }
-          setScrollToAyah(null);
-        }, 300);
-        return () => clearTimeout(timer);
-      }
-    }, [activeSurah, scrollToAyah]);
-
-    // Intersection Observer for Automatic Tracking
-    const observer = useRef<IntersectionObserver | null>(null);
-
-    useEffect(() => {
-      // Disconnect previous
-      if (observer.current) observer.current.disconnect();
-
-      if (!activeSurah) return;
-
-      observer.current = new IntersectionObserver((entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            const pageAttr = entry.target.getAttribute('data-page');
-            if (pageAttr) {
-              const page = parseInt(pageAttr);
-              handlePageRead(page);
-            }
-          }
-        });
-      }, {
-        threshold: 0.8, // 80% visible to count as "reading"
-        rootMargin: '0px 0px -20% 0px'
-      });
-
-      // Observer for Last Read Ayah (more precise)
-      const ayahObserver = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-          if (entry.isIntersecting) {
-            const ayahNum = parseInt(entry.target.getAttribute('data-ayah') || '1');
-            const surahNum = activeSurah.number;
-
-            // Debounce update to avoid spamming local storage
-            // In a real app, use a proper debounce function
-            if (user) {
-              const updatedUser = {
-                ...user,
-                lastRead: { surah: surahNum, ayah: ayahNum }
-              };
-              // Only update state if significantly different or settled? 
-              // For now, let's update state directly but maybe debounce the storage write?
-              // Or just direct update is okay for local React state
-              setUser(prev => ({ ...prev!, lastRead: { surah: surahNum, ayah: ayahNum } }));
-
-              // We can persist to storage less frequently or on unmount, 
-              // but for simplicity/reliability we'll persist here.
-              localStorage.setItem('noor_user', JSON.stringify(updatedUser));
-            }
-          }
-        });
-      }, {
-        threshold: 0.6, // 60% visibility
-        rootMargin: '-40% 0px -40% 0px' // Active only when in middle of screen
-      });
-
-      // Observe all ayahs
-      const ayahElements = document.querySelectorAll('.ayah-container');
-      ayahElements.forEach(el => {
-        observer.current?.observe(el);
-        ayahObserver.observe(el);
-      });
-
-      return () => {
-        observer.current?.disconnect();
-        ayahObserver.disconnect();
-      };
-    }, [activeSurah]); // Re-run when surah changes
-
-    if (!activeSurah) return <LoadingSpinner colorClass={currentTheme.text} />;
-
-    // Calculate font size class
-    const fontSizeClass = {
-      'small': 'text-sm',
-      'medium': 'text-base',
-      'large': 'text-lg',
-      'xl': 'text-xl'
-    }[settings.fontSize];
-
-    const arabicFontSizeClass = {
-      'small': 'text-2xl',
-      'medium': 'text-4xl',
-      'large': 'text-5xl',
-      'xl': 'text-6xl'
-    }[settings.fontSize];
-
-    const fontFamilyClass = settings.fontFamily === 'Lateef' ? 'font-quran' : 'font-arabic';
-
-    const playingAyahNumber = currentAudioIndex >= 0 ? audioQueue[currentAudioIndex]?.number : null;
-
-    return (
-      <div className="h-full overflow-y-auto pb-24 relative no-scrollbar">
-        {/* Fixed Header - Outside of animation context */}
-        <div className="fixed top-0 left-0 right-0 mx-auto w-full max-w-md h-20 bg-black/90 backdrop-blur-xl border-b border-white/5 z-50 flex items-center px-4 justify-between">
-          <button onClick={() => setView('surahList')} className="p-2 hover:bg-white/10 rounded-full">
-            <ChevronLeft />
-          </button>
-          <div className="text-center">
-            <h2 className="font-bold">{activeSurah.englishName}</h2>
-            <span className="text-xs text-white/50 font-arabic">{activeSurah.name}</span>
-          </div>
-
-          {/* Play Surah Button */}
-          <button
-            onClick={() => playSurah(activeSurah)}
-            className={`p-2 rounded-full ${currentTheme.bg} text-black hover:opacity-90 transition-opacity`}
-            aria-label="Play Surah"
-          >
-            <Play size={18} fill="currentColor" className="ml-0.5" />
-          </button>
-        </div>
-
-        {/* Content - Animated & Padded */}
-        <div className="pt-24 px-4 space-y-6 animate-fade-in">
-          {/* Bismillah */}
-          <div className="flex justify-center py-8 opacity-80">
-            <span className="font-quran text-4xl">بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ</span>
-          </div>
-
-          {activeSurah.ayahs.map((ayah, idx) => (
-            <div
-              key={ayah.number}
-              id={`ayah-${ayah.numberInSurah}`}
-              data-page={ayah.page}
-              data-ayah={ayah.numberInSurah}
-              className={`ayah-container py-6 border-b border-white/5 transition-colors duration-500 ${playingAyahNumber === ayah.number ? `${currentTheme.bg} bg-opacity-10 rounded-xl px-2` : ''} ${scrollToAyah === ayah.numberInSurah ? 'bg-white/5 rounded-xl px-2' : ''}`}
-            >
-              {/* Actions Bar */}
-              <div className="flex justify-between items-center mb-4 px-2">
-                <span className={`${currentTheme.bg} bg-opacity-10 ${currentTheme.text} text-xs px-2 py-1 rounded-full border ${currentTheme.border} border-opacity-20`}>
-                  {activeSurah.number}:{ayah.numberInSurah} | Pg {ayah.page}
-                </span>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => playSurah(activeSurah, idx)}
-                    className={`p-2 text-white/40 hover:${currentTheme.text} transition-colors`}
-                  >
-                    {playingAyahNumber === ayah.number && isPlaying ? <Pause size={18} /> : <Play size={18} />}
-                  </button>
-                  <button onClick={() => toggleBookmark(ayah)} className={`p-2 transition-colors ${user?.bookmarks.some(b => b.id === ayah.number) ? currentTheme.text : `text-white/40 hover:${currentTheme.text}`}`}>
-                    <Bookmark size={18} fill={user?.bookmarks.some(b => b.id === ayah.number) ? "currentColor" : "none"} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Arabic */}
-              <p className={`${fontFamilyClass} text-right ${arabicFontSizeClass} leading-[2.2] mb-6 px-1`}>
-                {ayah.text}
-              </p>
-
-              {/* Translation/Transliteration */}
-              <div className="space-y-2 px-1">
-                {settings.showTransliteration && (
-                  <p className={`${currentTheme.text} opacity-60 text-sm font-light italic mb-2`}>
-                    {ayah.translations?.transliteration}
-                  </p>
-                )}
-                {settings.showTranslation && (
-                  <p className={`text-white/90 font-sans leading-relaxed ${fontSizeClass}`}>
-                    {ayah.translations?.en}
-                  </p>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
+  // SurahView is defined outside App to prevent remounting on re-renders
 
   const SettingsView = () => {
     const [isEditingName, setIsEditingName] = useState(false);
@@ -1192,7 +1265,7 @@ export default function App() {
     };
 
     return (
-      <div className="min-h-[100dvh] pt-12 px-4 pb-32 animate-fade-in">
+      <div className="min-h-[100dvh] pt-12 px-4 pb-32 animate-fade-in relative">
         <h2 className="text-3xl font-bold mb-6">Settings</h2>
 
         <div className="space-y-6">
@@ -1206,39 +1279,46 @@ export default function App() {
                 </div>
                 <div className="flex-1">
                   <label className="text-xs text-white/40 block">Display Name</label>
-                  {isEditingName ? (
-                    <input
-                      type="text"
-                      value={tempName}
-                      onChange={(e) => setTempName(e.target.value)}
-                      className="bg-transparent border-b border-white/20 focus:border-white focus:ring-0 p-0 text-white font-medium placeholder-white/20 w-full pb-1"
-                      placeholder="Enter your name"
-                      autoFocus
-                    />
-                  ) : (
-                    <p className="text-white font-medium text-lg">{user?.name || 'Guest'}</p>
-                  )}
+                  <p className="text-white font-medium text-lg">{user?.name || 'Guest'}</p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 ml-4">
-                {isEditingName ? (
-                  <>
-                    <button onClick={() => { setIsEditingName(false); setTempName(user?.name || ''); }} className="p-2 hover:bg-white/10 rounded-full text-red-400">
-                      <X size={20} />
-                    </button>
-                    <button onClick={handleSaveName} className="p-2 hover:bg-white/10 rounded-full text-emerald-400">
-                      <CheckCircle2 size={20} />
-                    </button>
-                  </>
-                ) : (
-                  <button onClick={() => { setIsEditingName(true); setTempName(user?.name || ''); }} className="p-2 hover:bg-white/10 rounded-full text-white/40 hover:text-white">
-                    <PenLine size={20} />
-                  </button>
-                )}
-              </div>
+              <button onClick={() => { setTempName(user?.name || ''); setIsEditingName(true); }} className="p-2 hover:bg-white/10 rounded-full text-white/40 hover:text-white">
+                <PenLine size={20} />
+              </button>
             </GlassCard>
           </section>
+
+          {/* Name Edit Modal Overlay */}
+          {isEditingName && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+              <div className="w-full max-w-sm bg-zinc-900 border border-white/10 rounded-2xl p-6 shadow-2xl transform transition-all scale-100">
+                <h3 className="text-xl font-bold mb-4">Edit Name</h3>
+                <input
+                  type="text"
+                  value={tempName}
+                  onChange={(e) => setTempName(e.target.value)}
+                  className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white placeholder-white/20 focus:outline-none focus:border-white/40 mb-6"
+                  placeholder="Enter your name"
+                  autoFocus
+                />
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setIsEditingName(false)}
+                    className="flex-1 py-3 rounded-xl font-medium text-white/60 hover:bg-white/5 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveName}
+                    className={`flex-1 py-3 rounded-xl font-medium text-black ${currentTheme.bg} hover:opacity-90 transition-opacity`}
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Appearance Section */}
           <section>
@@ -1429,7 +1509,22 @@ export default function App() {
         {view === 'ramadanSetup' && <RamadanSetupView />}
         {view === 'home' && <HomeView />}
         {view === 'surahList' && <SurahListView />}
-        {view === 'surah' && <SurahView />}
+        {view === 'surah' && <SurahView
+          activeSurah={activeSurah}
+          scrollToAyah={scrollToAyah}
+          setScrollToAyah={setScrollToAyah}
+          settings={settings}
+          currentTheme={currentTheme}
+          user={user}
+          setUser={setUser}
+          playSurah={playSurah}
+          toggleBookmark={toggleBookmark}
+          handlePageRead={handlePageRead}
+          audioQueue={audioQueue}
+          currentAudioIndex={currentAudioIndex}
+          isPlaying={isPlaying}
+          setView={setView}
+        />}
         {view === 'settings' && <SettingsView />}
         {view === 'bookmarks' && <BookmarksView />}
 
