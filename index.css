@@ -5,28 +5,32 @@
 }
 
 html,
-body {
+body,
+#root {
     height: 100%;
     width: 100%;
     margin: 0;
     padding: 0;
     overflow: hidden;
-    /* Prevent global scrollbar */
+    position: fixed;
+    /* Lock body to prevent bounce */
     background-color: #000;
     user-select: none;
-    /* App-like feel */
     -webkit-tap-highlight-color: transparent;
     overscroll-behavior: none;
-    /* Prevent bounce */
 }
 
 #root {
-    height: 100%;
-    width: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
     overflow-y: auto;
-    /* Allow scrolling within the app container if needed */
-    overscroll-behavior-y: none;
+    /* Allow internal scrolling */
+    -webkit-overflow-scrolling: touch;
 }
+
 
 /* Custom Scrollbar Hiding */
 .no-scrollbar::-webkit-scrollbar {

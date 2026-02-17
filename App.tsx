@@ -1100,7 +1100,7 @@ export default function App() {
     const playingAyahNumber = currentAudioIndex >= 0 ? audioQueue[currentAudioIndex]?.number : null;
 
     return (
-      <div className="min-h-[100dvh] pb-32 relative">
+      <div className="h-full overflow-y-auto pb-24 relative no-scrollbar">
         {/* Fixed Header - Outside of animation context */}
         <div className="fixed top-0 left-0 right-0 mx-auto w-full max-w-md h-20 bg-black/90 backdrop-blur-xl border-b border-white/5 z-50 flex items-center px-4 justify-between">
           <button onClick={() => setView('surahList')} className="p-2 hover:bg-white/10 rounded-full">
@@ -1179,159 +1179,188 @@ export default function App() {
     );
   };
 
-  const SettingsView = () => (
-    <div className="min-h-[100dvh] pt-12 px-4 pb-32 animate-fade-in">
-      <h2 className="text-3xl font-bold mb-6">Settings</h2>
+  const SettingsView = () => {
+    const [isEditingName, setIsEditingName] = useState(false);
+    const [tempName, setTempName] = useState(user?.name || '');
 
-      <div className="space-y-6">
-        {/* Profile Section */}
-        <section>
-          <h3 className="text-sm font-semibold text-white/40 uppercase tracking-widest mb-3 ml-1">Profile</h3>
-          <GlassCard className="p-5 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-full ${currentTheme.bg} flex items-center justify-center font-bold text-xl`}>
-                {user?.name?.[0] || 'G'}
-              </div>
-              <div className="flex-1">
-                <label className="text-xs text-white/40 block">Display Name</label>
-                <input
-                  type="text"
-                  value={user?.name || ''}
-                  onChange={(e) => {
-                    const newName = e.target.value;
-                    const updatedUser = { ...user!, name: newName };
-                    setUser(updatedUser);
-                    localStorage.setItem('noor_user', JSON.stringify(updatedUser));
-                  }}
-                  className="bg-transparent border-none focus:ring-0 p-0 text-white font-medium placeholder-white/20 w-full"
-                  placeholder="Enter your name"
-                />
-              </div>
-            </div>
-            <PenLine size={16} className="text-white/40" />
-          </GlassCard>
-        </section>
+    const handleSaveName = () => {
+      if (!user) return;
+      const updatedUser = { ...user, name: tempName };
+      setUser(updatedUser);
+      localStorage.setItem('noor_user', JSON.stringify(updatedUser));
+      setIsEditingName(false);
+    };
 
-        {/* Appearance Section */}
-        <section>
-          <h3 className="text-sm font-semibold text-white/40 uppercase tracking-widest mb-3 ml-1">Appearance</h3>
+    return (
+      <div className="min-h-[100dvh] pt-12 px-4 pb-32 animate-fade-in">
+        <h2 className="text-3xl font-bold mb-6">Settings</h2>
 
-          <GlassCard className="p-5 space-y-6">
-            {/* Theme Colors */}
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <Palette size={18} className={currentTheme.text} />
-                <span className="font-medium">Accent Color</span>
+        <div className="space-y-6">
+          {/* Profile Section */}
+          <section>
+            <h3 className="text-sm font-semibold text-white/40 uppercase tracking-widest mb-3 ml-1">Profile</h3>
+            <GlassCard className="p-5 flex items-center justify-between">
+              <div className="flex items-center gap-3 w-full">
+                <div className={`w-10 h-10 rounded-full ${currentTheme.bg} flex items-center justify-center font-bold text-xl shrink-0`}>
+                  {user?.name?.[0] || 'G'}
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs text-white/40 block">Display Name</label>
+                  {isEditingName ? (
+                    <input
+                      type="text"
+                      value={tempName}
+                      onChange={(e) => setTempName(e.target.value)}
+                      className="bg-transparent border-b border-white/20 focus:border-white focus:ring-0 p-0 text-white font-medium placeholder-white/20 w-full pb-1"
+                      placeholder="Enter your name"
+                      autoFocus
+                    />
+                  ) : (
+                    <p className="text-white font-medium text-lg">{user?.name || 'Guest'}</p>
+                  )}
+                </div>
               </div>
-              <div className="flex gap-3 overflow-x-auto no-scrollbar py-1">
-                {(Object.keys(THEMES) as Array<keyof typeof THEMES>).map((themeKey) => (
-                  <button
-                    key={themeKey}
-                    onClick={() => {
-                      const newSettings = { ...settings, accentColor: themeKey };
-                      setSettings(newSettings);
-                      localStorage.setItem('noor_settings', JSON.stringify(newSettings));
-                    }}
-                    className={`w-10 h-10 rounded-full ${THEMES[themeKey].bg} border-2 transition-all ${settings.accentColor === themeKey ? 'border-white scale-110' : 'border-transparent opacity-60 hover:opacity-100'}`}
-                  />
-                ))}
-              </div>
-            </div>
 
-            {/* Font Size */}
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <Type size={18} className={currentTheme.text} />
-                <span className="font-medium">Font Size</span>
-              </div>
-              <div className="flex bg-black/30 p-1 rounded-xl">
-                {['small', 'medium', 'large', 'xl'].map((size) => (
-                  <button
-                    key={size}
-                    onClick={() => {
-                      const newSettings = { ...settings, fontSize: size as any };
-                      setSettings(newSettings);
-                      localStorage.setItem('noor_settings', JSON.stringify(newSettings));
-                    }}
-                    className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${settings.fontSize === size ? 'bg-white/20 text-white' : 'text-white/40 hover:text-white/70'}`}
-                  >
-                    {size === 'small' ? 'Aa' : size === 'medium' ? 'Aa' : size === 'large' ? 'Aa' : 'Aa'}
-                    <span className="text-[10px] block opacity-50 capitalize">{size}</span>
+              <div className="flex items-center gap-2 ml-4">
+                {isEditingName ? (
+                  <>
+                    <button onClick={() => { setIsEditingName(false); setTempName(user?.name || ''); }} className="p-2 hover:bg-white/10 rounded-full text-red-400">
+                      <X size={20} />
+                    </button>
+                    <button onClick={handleSaveName} className="p-2 hover:bg-white/10 rounded-full text-emerald-400">
+                      <CheckCircle2 size={20} />
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={() => { setIsEditingName(true); setTempName(user?.name || ''); }} className="p-2 hover:bg-white/10 rounded-full text-white/40 hover:text-white">
+                    <PenLine size={20} />
                   </button>
-                ))}
+                )}
               </div>
-            </div>
-
-            {/* Font Family */}
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <Type size={18} className={currentTheme.text} />
-                <span className="font-medium">Arabic Font Style</span>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setSettings(s => ({ ...s, fontFamily: 'Amiri' }))}
-                  className={`flex-1 py-3 border border-white/10 rounded-xl font-arabic text-xl ${settings.fontFamily === 'Amiri' ? `${currentTheme.bg} text-white` : 'bg-black/20 text-white/60'}`}
-                >
-                  الأميري
-                </button>
-                <button
-                  onClick={() => setSettings(s => ({ ...s, fontFamily: 'Lateef' }))}
-                  className={`flex-1 py-3 border border-white/10 rounded-xl font-quran text-xl ${settings.fontFamily === 'Lateef' ? `${currentTheme.bg} text-white` : 'bg-black/20 text-white/60'}`}
-                >
-                  لطيف
-                </button>
-              </div>
-            </div>
-          </GlassCard>
-        </section>
-
-        {/* Reading Preferences */}
-        <section>
-          <h3 className="text-sm font-semibold text-white/40 uppercase tracking-widest mb-3 ml-1">Reading</h3>
-          <div className="space-y-3">
-            <GlassCard className="p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <BookOpen size={20} className={currentTheme.text} />
-                <span>Show Translation</span>
-              </div>
-              <button
-                onClick={() => setSettings(s => ({ ...s, showTranslation: !s.showTranslation }))}
-                className={`w-12 h-6 rounded-full relative transition-colors ${settings.showTranslation ? currentTheme.bg : 'bg-white/20'}`}
-              >
-                <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${settings.showTranslation ? 'left-7' : 'left-1'}`}></div>
-              </button>
             </GlassCard>
+          </section>
 
-            <GlassCard className="p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className={`${currentTheme.text} text-sm font-bold border ${currentTheme.border} rounded px-1`}>Abc</span>
-                <span>Show Transliteration</span>
+          {/* Appearance Section */}
+          <section>
+            <h3 className="text-sm font-semibold text-white/40 uppercase tracking-widest mb-3 ml-1">Appearance</h3>
+
+            <GlassCard className="p-5 space-y-6">
+              {/* Theme Colors */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Palette size={18} className={currentTheme.text} />
+                  <span className="font-medium">Accent Color</span>
+                </div>
+                <div className="flex gap-3 overflow-x-auto no-scrollbar py-1">
+                  {(Object.keys(THEMES) as Array<keyof typeof THEMES>).map((themeKey) => (
+                    <button
+                      key={themeKey}
+                      onClick={() => {
+                        const newSettings = { ...settings, accentColor: themeKey };
+                        setSettings(newSettings);
+                        localStorage.setItem('noor_settings', JSON.stringify(newSettings));
+                      }}
+                      className={`w-10 h-10 rounded-full ${THEMES[themeKey].bg} border-2 transition-all ${settings.accentColor === themeKey ? 'border-white scale-110' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                    />
+                  ))}
+                </div>
               </div>
-              <button
-                onClick={() => setSettings(s => ({ ...s, showTransliteration: !s.showTransliteration }))}
-                className={`w-12 h-6 rounded-full relative transition-colors ${settings.showTransliteration ? currentTheme.bg : 'bg-white/20'}`}
-              >
-                <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${settings.showTransliteration ? 'left-7' : 'left-1'}`}></div>
-              </button>
-            </GlassCard>
-          </div>
-        </section>
 
-        {/* Goal Management */}
-        <section>
-          <h3 className="text-sm font-semibold text-white/40 uppercase tracking-widest mb-3 ml-1">Goals</h3>
-          <GlassCard onClick={() => setView('ramadanSetup')} className="p-4 flex items-center justify-between cursor-pointer hover:bg-white/10">
-            <div className="flex items-center gap-3">
-              <Target size={20} className={currentTheme.text} />
-              <span>Reset Ramadan Goal</span>
+              {/* Font Size */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Type size={18} className={currentTheme.text} />
+                  <span className="font-medium">Font Size</span>
+                </div>
+                <div className="flex bg-black/30 p-1 rounded-xl">
+                  {['small', 'medium', 'large', 'xl'].map((size) => (
+                    <button
+                      key={size}
+                      onClick={() => {
+                        const newSettings = { ...settings, fontSize: size as any };
+                        setSettings(newSettings);
+                        localStorage.setItem('noor_settings', JSON.stringify(newSettings));
+                      }}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${settings.fontSize === size ? 'bg-white/20 text-white' : 'text-white/40 hover:text-white/70'}`}
+                    >
+                      {size === 'small' ? 'Aa' : size === 'medium' ? 'Aa' : size === 'large' ? 'Aa' : 'Aa'}
+                      <span className="text-[10px] block opacity-50 capitalize">{size}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Font Family */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Type size={18} className={currentTheme.text} />
+                  <span className="font-medium">Arabic Font Style</span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setSettings(s => ({ ...s, fontFamily: 'Amiri' }))}
+                    className={`flex-1 py-3 border border-white/10 rounded-xl font-arabic text-xl ${settings.fontFamily === 'Amiri' ? `${currentTheme.bg} text-white` : 'bg-black/20 text-white/60'}`}
+                  >
+                    الأميري
+                  </button>
+                  <button
+                    onClick={() => setSettings(s => ({ ...s, fontFamily: 'Lateef' }))}
+                    className={`flex-1 py-3 border border-white/10 rounded-xl font-quran text-xl ${settings.fontFamily === 'Lateef' ? `${currentTheme.bg} text-white` : 'bg-black/20 text-white/60'}`}
+                  >
+                    لطيف
+                  </button>
+                </div>
+              </div>
+            </GlassCard>
+          </section>
+
+          {/* Reading Preferences */}
+          <section>
+            <h3 className="text-sm font-semibold text-white/40 uppercase tracking-widest mb-3 ml-1">Reading</h3>
+            <div className="space-y-3">
+              <GlassCard className="p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <BookOpen size={20} className={currentTheme.text} />
+                  <span>Show Translation</span>
+                </div>
+                <button
+                  onClick={() => setSettings(s => ({ ...s, showTranslation: !s.showTranslation }))}
+                  className={`w-12 h-6 rounded-full relative transition-colors ${settings.showTranslation ? currentTheme.bg : 'bg-white/20'}`}
+                >
+                  <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${settings.showTranslation ? 'left-7' : 'left-1'}`}></div>
+                </button>
+              </GlassCard>
+
+              <GlassCard className="p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className={`${currentTheme.text} text-sm font-bold border ${currentTheme.border} rounded px-1`}>Abc</span>
+                  <span>Show Transliteration</span>
+                </div>
+                <button
+                  onClick={() => setSettings(s => ({ ...s, showTransliteration: !s.showTransliteration }))}
+                  className={`w-12 h-6 rounded-full relative transition-colors ${settings.showTransliteration ? currentTheme.bg : 'bg-white/20'}`}
+                >
+                  <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${settings.showTransliteration ? 'left-7' : 'left-1'}`}></div>
+                </button>
+              </GlassCard>
             </div>
-            <ChevronLeft className="rotate-180 opacity-50" size={16} />
-          </GlassCard>
-        </section>
+          </section>
+
+          {/* Goal Management */}
+          <section>
+            <h3 className="text-sm font-semibold text-white/40 uppercase tracking-widest mb-3 ml-1">Goals</h3>
+            <GlassCard onClick={() => setView('ramadanSetup')} className="p-4 flex items-center justify-between cursor-pointer hover:bg-white/10">
+              <div className="flex items-center gap-3">
+                <Target size={20} className={currentTheme.text} />
+                <span>Reset Ramadan Goal</span>
+              </div>
+              <ChevronLeft className="rotate-180 opacity-50" size={16} />
+            </GlassCard>
+          </section>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const BookmarksView = () => (
     <div className="min-h-[100dvh] pt-12 px-4 pb-32 animate-fade-in">
