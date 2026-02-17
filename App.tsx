@@ -18,6 +18,7 @@ import {
   Trophy,
   Type,
   Palette,
+  PenLine,
   Minus,
   Plus,
   X,
@@ -654,77 +655,82 @@ export default function App() {
         <div className={`absolute top-0 right-0 p-32 ${currentTheme.bg} opacity-10 blur-[100px] rounded-full pointer-events-none`}></div>
 
         <div className="w-full max-w-md relative z-10">
-          <button onClick={() => setView('home')} className="mb-8 flex items-center text-white/50 hover:text-white transition-colors">
+          <button onClick={() => setView('home')} className="mb-6 flex items-center text-white/50 hover:text-white transition-colors">
             <ChevronLeft size={20} /> <span className="ml-1">Cancel</span>
           </button>
 
           <h2 className={`text-4xl font-arabic font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r ${currentTheme.gradient}`}>Ramadan Goal</h2>
-          <p className="text-white/60 mb-10 text-lg font-light">Design your spiritual journey for the holy month.</p>
+          <p className="text-white/60 mb-8 text-lg font-light">Design your spiritual journey.</p>
 
-          <GlassCard className="p-8 space-y-10" variant="dark">
-            {/* Khatam Count */}
-            <div>
+          {/* Hero Card - Daily Pages */}
+          <div className="mb-8 relative group">
+            <div className={`absolute -inset-1 ${currentTheme.bg} rounded-3xl blur opacity-20 group-hover:opacity-40 transition duration-1000`}></div>
+            <GlassCard className="relative p-8 text-center border-t border-white/10" variant="dark">
+              <span className="text-sm font-semibold uppercase tracking-widest text-white/40 mb-2 block">Daily Target</span>
+              <div className="flex items-baseline justify-center gap-2">
+                <span className={`text-6xl font-bold ${currentTheme.text} drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]`}>{dailyPages}</span>
+                <span className="text-xl text-white/60 font-light">Pages</span>
+              </div>
+              <p className="text-xs text-white/40 mt-4">
+                {khatams} Khatam{khatams > 1 ? 's' : ''} in {days} Days
+              </p>
+            </GlassCard>
+          </div>
+
+          <div className="space-y-6">
+            {/* Slider: Khatams */}
+            <GlassCard className="p-6">
               <div className="flex justify-between items-center mb-4">
-                <label className={`text-sm font-bold uppercase tracking-widest ${currentTheme.text} opacity-80`}>Khatams</label>
-                <span className="text-xs text-white/40">Total Completions</span>
+                <label className="text-sm font-bold text-white/80">Khatams</label>
+                <span className={`text-2xl font-bold font-arabic ${currentTheme.text}`}>{khatams}</span>
               </div>
-              <div className="flex items-center justify-between bg-black/40 rounded-2xl p-2 border border-white/5">
-                <button onClick={() => setKhatams(Math.max(1, khatams - 1))} className="w-12 h-12 flex items-center justify-center hover:bg-white/10 rounded-xl transition-colors"><Minus size={20} /></button>
-                <span className="text-3xl font-bold font-arabic">{khatams}</span>
-                <button onClick={() => setKhatams(khatams + 1)} className="w-12 h-12 flex items-center justify-center hover:bg-white/10 rounded-xl transition-colors"><Plus size={20} /></button>
+              <input
+                type="range"
+                min="0.5"
+                max="10"
+                step="0.5"
+                value={khatams}
+                onChange={(e) => setKhatams(parseFloat(e.target.value))}
+                className={`w-full h-2 rounded-lg appearance-none cursor-pointer bg-white/10 accent-${currentTheme.bg.replace('bg-', '')}`}
+              />
+              <div className="flex justify-between mt-2 text-xs text-white/30 font-medium">
+                <span>0.5</span>
+                <span>10</span>
               </div>
-            </div>
+            </GlassCard>
 
-            {/* Duration */}
-            <div>
+            {/* Slider: Days */}
+            <GlassCard className={`p-6 transition-all duration-500 ${isRamadanMode ? 'border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.1)]' : ''}`}>
               <div className="flex justify-between items-center mb-4">
-                <label className={`text-sm font-bold uppercase tracking-widest ${currentTheme.text} opacity-80`}>Timeline</label>
-                <span className="text-xs text-white/40">{isRamadanMode ? 'Synced with Ramadan' : 'Days'}</span>
-              </div>
-              <div className={`flex items-center justify-between bg-black/40 rounded-2xl p-2 border ${isRamadanMode ? 'border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.1)]' : 'border-white/5'}`}>
-                <button
-                  onClick={() => !isRamadanMode && setDays(Math.max(1, days - 1))}
-                  className={`w-12 h-12 flex items-center justify-center rounded-xl transition-colors ${isRamadanMode ? 'opacity-30 cursor-not-allowed' : 'hover:bg-white/10'}`}
-                  disabled={isRamadanMode}
-                >
-                  <Minus size={20} />
-                </button>
-                <span className="text-3xl font-bold font-arabic">{days}</span>
-                <button
-                  onClick={() => !isRamadanMode && setDays(days + 1)}
-                  className={`w-12 h-12 flex items-center justify-center rounded-xl transition-colors ${isRamadanMode ? 'opacity-30 cursor-not-allowed' : 'hover:bg-white/10'}`}
-                  disabled={isRamadanMode}
-                >
-                  <Plus size={20} />
-                </button>
-              </div>
-              {isRamadanMode && (
-                <p className="text-[10px] text-emerald-400 mt-2 text-center">
-                  Goal automatically set to remaining Ramadan days.
-                </p>
-              )}
-            </div>
-
-            {/* Summary */}
-            <div className={`p-5 rounded-2xl bg-gradient-to-br ${currentTheme.bg} bg-opacity-20 border ${currentTheme.border} border-opacity-20 text-white`}>
-              <div className="flex items-start gap-4">
-                <div className={`p-3 ${currentTheme.bg} bg-opacity-20 rounded-full`}>
-                  <Target size={24} className={currentTheme.text} />
-                </div>
-                <div>
-                  <p className="font-bold text-lg mb-1">Your Commitment</p>
-                  <p className="opacity-80 font-light leading-relaxed">Reading <span className="font-bold text-xl text-white">{dailyPages}</span> pages daily will complete the Quran in {days} days.</p>
+                <label className="text-sm font-bold text-white/80">Duration</label>
+                <div className="flex items-center gap-2">
+                  {isRamadanMode && <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20 animate-pulse">Synced</span>}
+                  <span className={`text-2xl font-bold font-arabic ${currentTheme.text}`}>{days} <span className="text-sm text-white/40 font-sans">Days</span></span>
                 </div>
               </div>
-            </div>
 
-            <button
-              onClick={finishSetup}
-              className={`w-full py-5 rounded-2xl font-bold text-black bg-gradient-to-r ${currentTheme.gradient} hover:opacity-90 transition-all ${currentTheme.glow}`}
-            >
-              Confirm Intention
-            </button>
-          </GlassCard>
+              <input
+                type="range"
+                min="5"
+                max="60"
+                disabled={isRamadanMode}
+                value={days}
+                onChange={(e) => setDays(parseInt(e.target.value))}
+                className={`w-full h-2 rounded-lg appearance-none cursor-pointer bg-white/10 ${isRamadanMode ? 'opacity-50 cursor-not-allowed' : ''} accent-${currentTheme.bg.replace('bg-', '')}`}
+              />
+              <div className="flex justify-between mt-2 text-xs text-white/30 font-medium">
+                <span>5 Days</span>
+                <span>60 Days</span>
+              </div>
+            </GlassCard>
+          </div>
+
+          <button
+            onClick={finishSetup}
+            className={`w-full mt-10 py-4 rounded-2xl font-bold text-lg text-black ${currentTheme.bg} hover:opacity-90 transition-all shadow-lg hover:shadow-[0_0_20px_rgba(255,215,0,0.3)] transform hover:-translate-y-1 active:scale-95`}
+          >
+            Start Journey
+          </button>
         </div>
       </div>
     );
@@ -1178,6 +1184,34 @@ export default function App() {
       <h2 className="text-3xl font-bold mb-6">Settings</h2>
 
       <div className="space-y-6">
+        {/* Profile Section */}
+        <section>
+          <h3 className="text-sm font-semibold text-white/40 uppercase tracking-widest mb-3 ml-1">Profile</h3>
+          <GlassCard className="p-5 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-full ${currentTheme.bg} flex items-center justify-center font-bold text-xl`}>
+                {user?.name?.[0] || 'G'}
+              </div>
+              <div className="flex-1">
+                <label className="text-xs text-white/40 block">Display Name</label>
+                <input
+                  type="text"
+                  value={user?.name || ''}
+                  onChange={(e) => {
+                    const newName = e.target.value;
+                    const updatedUser = { ...user!, name: newName };
+                    setUser(updatedUser);
+                    localStorage.setItem('noor_user', JSON.stringify(updatedUser));
+                  }}
+                  className="bg-transparent border-none focus:ring-0 p-0 text-white font-medium placeholder-white/20 w-full"
+                  placeholder="Enter your name"
+                />
+              </div>
+            </div>
+            <PenLine size={16} className="text-white/40" />
+          </GlassCard>
+        </section>
+
         {/* Appearance Section */}
         <section>
           <h3 className="text-sm font-semibold text-white/40 uppercase tracking-widest mb-3 ml-1">Appearance</h3>
