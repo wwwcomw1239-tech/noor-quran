@@ -166,6 +166,8 @@ const SurahView: React.FC<SurahViewProps> = ({
     const surahNum = activeSurah.number;
 
     const handleIntersect = (entries: IntersectionObserverEntry[]) => {
+      let highestVisibleAyah = lastReadRef.current?.ayah || 0;
+
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
           const pageAttr = entry.target.getAttribute('data-page');
@@ -177,20 +179,25 @@ const SurahView: React.FC<SurahViewProps> = ({
 
           if (ayahAttr) {
             const ayahNum = parseInt(ayahAttr);
-            lastReadRef.current = { surah: surahNum, ayah: ayahNum };
-
-            // Write directly to localStorage (read-modify-write to avoid clobbering other fields)
-            try {
-              const currentUserStr = localStorage.getItem('noor_user');
-              if (currentUserStr) {
-                const currentUser = JSON.parse(currentUserStr);
-                currentUser.lastRead = { surah: surahNum, ayah: ayahNum };
-                localStorage.setItem('noor_user', JSON.stringify(currentUser));
-              }
-            } catch (e) { /* ignore */ }
+            if (ayahNum > highestVisibleAyah) {
+              highestVisibleAyah = ayahNum;
+            }
           }
         }
       });
+
+      // Only update lastRead if we found a higher ayah than before
+      if (highestVisibleAyah > (lastReadRef.current?.ayah || 0) || lastReadRef.current?.surah !== surahNum) {
+        lastReadRef.current = { surah: surahNum, ayah: highestVisibleAyah };
+        try {
+          const currentUserStr = localStorage.getItem('noor_user');
+          if (currentUserStr) {
+            const currentUser = JSON.parse(currentUserStr);
+            currentUser.lastRead = { surah: surahNum, ayah: highestVisibleAyah };
+            localStorage.setItem('noor_user', JSON.stringify(currentUser));
+          }
+        } catch (e) { /* ignore */ }
+      }
     };
 
     observer.current = new IntersectionObserver(handleIntersect, {
@@ -632,7 +639,8 @@ export default function App() {
       setUser(currentUser);
       // Re-identify returning user for PostHog
       if (currentUser?.name) {
-        identifyUser(currentUser.name.toLowerCase().replace(/\s+/g, '_'), {
+        const storedId = localStorage.getItem('noor_posthog_id') || currentUser.name.toLowerCase().replace(/\s+/g, '_');
+        identifyUser(storedId, {
           name: currentUser.name,
           gender: currentUser.gender,
           streak: currentUser.streak,
@@ -789,7 +797,10 @@ export default function App() {
     };
     setUser(newUser);
     localStorage.setItem('noor_user', JSON.stringify(newUser));
-    identifyUser(name.toLowerCase().replace(/\s+/g, '_') + '_' + Date.now(), {
+    // Generate a stable user ID and persist it
+    const stableId = name.toLowerCase().replace(/\s+/g, '_') + '_' + Date.now();
+    localStorage.setItem('noor_posthog_id', stableId);
+    identifyUser(stableId, {
       name,
       gender,
     });
