@@ -5,8 +5,17 @@ export const API_BASE = 'https://api.alquran.cloud/v1';
 
 export const RECITERS = [
   { id: 'ar.alafasy', name: 'Mishary Rashid Alafasy' },
-  { id: 'ar.abdulbasit', name: 'Abdul Basit' },
-  { id: 'ar.sudais', name: 'Abdurrahmaan As-Sudais' },
+  { id: 'ar.abdulbasitmurattal', name: 'Abdul Basit (Murattal)' },
+  { id: 'ar.abdurrahmaansudais', name: 'Abdurrahmaan As-Sudais' },
+  { id: 'ar.husary', name: 'Mahmoud Khalil Al-Husary' },
+  { id: 'ar.minshawi', name: 'Mohamed Siddiq Al-Minshawi' },
+  { id: 'ar.mahermuaiqly', name: 'Maher Al Muaiqly' },
+  { id: 'ar.hudhaify', name: 'Ali Al-Hudhaify' },
+  { id: 'ar.saoodshuraym', name: "Sa'ood Ash-Shuraym" },
+  { id: 'ar.shaatree', name: 'Abu Bakr Ash-Shatree' },
+  { id: 'ar.muhammadayyoub', name: 'Muhammad Ayyoub' },
+  { id: 'ar.muhammadjibreel', name: 'Muhammad Jibreel' },
+  { id: 'ar.hanirifai', name: 'Hani Ar-Rifai' },
 ];
 
 export const THEMES = {

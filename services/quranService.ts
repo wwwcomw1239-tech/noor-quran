@@ -49,16 +49,30 @@ export const fetchAllSurahs = async (): Promise<Surah[]> => {
   }
 };
 
-export const fetchSurahDetails = async (surahNumber: number): Promise<SurahDetails | null> => {
+// Clear all cached surah details (needed when reciter changes since audio URLs differ)
+export const clearSurahDetailsCache = () => {
+  surahDetailsCache.clear();
+  // Clear localStorage entries too
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i);
+    if (key?.startsWith(SURAH_DETAIL_CACHE_PREFIX)) {
+      localStorage.removeItem(key);
+    }
+  }
+};
+
+export const fetchSurahDetails = async (surahNumber: number, reciterId: string = 'ar.alafasy'): Promise<SurahDetails | null> => {
+  const cacheKey = surahNumber; // we clear cache on reciter change, so key is just the number
+
   // 1. In-memory hit
-  if (surahDetailsCache.has(surahNumber)) {
-    return surahDetailsCache.get(surahNumber)!;
+  if (surahDetailsCache.has(cacheKey)) {
+    return surahDetailsCache.get(cacheKey)!;
   }
 
   // 2. localStorage hit
   const stored = loadFromStorage<SurahDetails>(SURAH_DETAIL_CACHE_PREFIX + surahNumber);
   if (stored) {
-    surahDetailsCache.set(surahNumber, stored);
+    surahDetailsCache.set(cacheKey, stored);
     return stored;
   }
 
@@ -79,7 +93,7 @@ export const fetchSurahDetails = async (surahNumber: number): Promise<SurahDetai
         en: translationData.ayahs[index].text,
         transliteration: transliterationData.ayahs[index].text
       },
-      audio: `https://cdn.islamic.network/quran/audio/128/ar.alafasy/${ayah.number}.mp3`
+      audio: `https://cdn.islamic.network/quran/audio/128/${reciterId}/${ayah.number}.mp3`
     }));
 
     const result: SurahDetails = {

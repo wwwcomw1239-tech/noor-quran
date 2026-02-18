@@ -50,11 +50,20 @@ import {
   Share,
   Download,
   User,
-  UserCircle2
+  UserCircle2,
+  Mic,
+  ChevronDown,
+  Sun,
+  Sunrise,
+  Sunset,
+  Clock,
+  CloudSun,
+  ChevronsLeft,
+  ChevronsRight
 } from 'lucide-react';
 import { Surah, SurahDetails, UserSettings, UserProfile, Ayah, Bookmark as BookmarkType, RamadanGoal, ViewState } from './types';
-import { fetchAllSurahs, fetchSurahDetails } from './services/quranService';
-import { DEFAULT_SETTINGS, POPULAR_SURAHS, DAILY_DUAS, THEMES } from './constants';
+import { fetchAllSurahs, fetchSurahDetails, clearSurahDetailsCache } from './services/quranService';
+import { DEFAULT_SETTINGS, POPULAR_SURAHS, DAILY_DUAS, THEMES, RECITERS } from './constants';
 import { getRamadanStatus } from './utils/date';
 
 // --- Helper Components ---
@@ -266,7 +275,13 @@ const SurahView: React.FC<SurahViewProps> = ({
           <span className="text-xs text-white/50 font-arabic">{activeSurah.name}</span>
         </div>
         <button
-          onClick={() => playSurah(activeSurah)}
+          onClick={() => {
+            // Start from the last-read ayah if we navigated here via Continue Reading
+            const startIdx = (user?.lastRead?.surah === activeSurah.number && user?.lastRead?.ayah)
+              ? Math.max(0, activeSurah.ayahs.findIndex(a => a.numberInSurah === user.lastRead!.ayah))
+              : 0;
+            playSurah(activeSurah, startIdx);
+          }}
           className={`p-2 rounded-full ${currentTheme.bg} text-black hover:opacity-90 transition-opacity`}
           aria-label="Play Surah"
         >
@@ -508,9 +523,13 @@ const AudioPlayerBar = ({
   isPlaying,
   currentAyah,
   currentSurahName,
+  surahNumber,
+  totalAyahs,
   onPlayPause,
   onNext,
   onPrev,
+  onNextSurah,
+  onPrevSurah,
   onClose,
   playbackSpeed,
   onSpeedChange,
@@ -519,9 +538,13 @@ const AudioPlayerBar = ({
   isPlaying: boolean,
   currentAyah: Ayah | null,
   currentSurahName: string,
+  surahNumber: number,
+  totalAyahs: number,
   onPlayPause: () => void,
   onNext: () => void,
   onPrev: () => void,
+  onNextSurah: (() => void) | null,
+  onPrevSurah: (() => void) | null,
   onClose: () => void,
   playbackSpeed: number,
   onSpeedChange: () => void,
@@ -529,49 +552,89 @@ const AudioPlayerBar = ({
 }) => {
   if (!currentAyah) return null;
 
+  const progress = totalAyahs > 0 ? (currentAyah.numberInSurah / totalAyahs) * 100 : 0;
+
   return (
-    <div className="fixed bottom-32 left-4 right-4 max-w-sm mx-auto z-40 animate-fade-in">
-      <div className="bg-black/80 backdrop-blur-xl border border-white/10 rounded-3xl p-4 shadow-2xl flex items-center gap-3 relative overflow-hidden ring-1 ring-white/5">
-        {/* Glow behind */}
-        <div className={`absolute -inset-1 ${theme.bg} opacity-20 blur-xl`}></div>
+    <div className="fixed bottom-28 left-3 right-3 max-w-sm mx-auto z-40 animate-fade-in">
+      <div className="relative rounded-2xl bg-[#0e0e0e] border border-white/[0.06] shadow-[0_8px_40px_rgba(0,0,0,0.6)] overflow-hidden">
 
-        {/* Progress bar background */}
-        <div className={`absolute bottom-0 left-0 h-[2px] ${theme.bg}`} style={{ width: '100%' }}></div>
-
-        {/* Info */}
-        <div className="flex-1 min-w-0 relative z-10 pl-2">
-          <h4 className="font-bold text-sm truncate text-white">{currentSurahName}</h4>
-          <p className="text-xs text-white/50 truncate font-medium">Ayah {currentAyah.numberInSurah}</p>
+        {/* Progress bar at top */}
+        <div className="h-[2px] bg-white/[0.04]">
+          <div
+            className={`h-full bg-gradient-to-r ${theme.gradient} transition-all duration-300`}
+            style={{ width: `${progress}%` }}
+          ></div>
         </div>
 
-        {/* Speed Button */}
-        <button
-          onClick={onSpeedChange}
-          className={`relative z-10 px-2 py-1 rounded-lg text-[11px] font-bold border border-white/10 hover:border-white/20 transition-colors min-w-[40px] text-center ${playbackSpeed !== 1 ? `${theme.text} ${theme.border}` : 'text-white/50'}`}
-        >
-          {playbackSpeed}x
-        </button>
-
-        {/* Controls */}
-        <div className="flex items-center gap-4 relative z-10">
-          <button onClick={onPrev} className="text-white/60 hover:text-white transition-colors">
-            <SkipBack size={20} />
+        {/* Row 1: Info + Close */}
+        <div className="flex items-center gap-3 px-4 pt-3.5 pb-1">
+          {/* Ayah badge */}
+          <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${theme.gradient} flex items-center justify-center shrink-0`}>
+            <span className="text-black font-bold text-[10px]">{currentAyah.numberInSurah}</span>
+          </div>
+          {/* Info */}
+          <div className="flex-1 min-w-0">
+            <p className="text-white font-semibold text-[13px] truncate leading-tight">{currentSurahName}</p>
+            <p className="text-white/25 text-[11px]">Ayah {currentAyah.numberInSurah} of {totalAyahs}</p>
+          </div>
+          {/* Speed */}
+          <button
+            onClick={onSpeedChange}
+            className={`px-2 py-1 rounded-md text-[10px] font-bold transition-colors ${
+              playbackSpeed !== 1 ? `${theme.text} bg-white/[0.06]` : 'text-white/25 hover:text-white/40'
+            }`}
+          >
+            {playbackSpeed}x
           </button>
+          {/* Close */}
+          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-white/10 text-white/20 hover:text-white/50 transition-all">
+            <X size={14} />
+          </button>
+        </div>
+
+        {/* Row 2: Controls */}
+        <div className="flex items-center justify-center gap-2 px-4 pt-1 pb-3.5">
+          {/* Prev Surah */}
+          <button
+            onClick={onPrevSurah || undefined}
+            disabled={!onPrevSurah}
+            className={`p-1.5 rounded-full transition-colors ${onPrevSurah ? 'text-white/30 hover:text-white/60 hover:bg-white/[0.06]' : 'text-white/10 cursor-default'}`}
+            title={onPrevSurah ? 'Previous Surah' : ''}
+          >
+            <ChevronsLeft size={16} />
+          </button>
+
+          {/* Prev Ayah */}
+          <button onClick={onPrev} className="p-1.5 text-white/40 hover:text-white transition-colors">
+            <SkipBack size={17} />
+          </button>
+
+          {/* Play/Pause */}
           <button
             onClick={onPlayPause}
-            className={`w-12 h-12 rounded-full ${theme.bg} text-black flex items-center justify-center hover:scale-105 transition-transform shadow-[0_0_15px_rgba(255,255,255,0.2)]`}
+            className="w-11 h-11 rounded-full bg-white flex items-center justify-center hover:scale-105 active:scale-95 transition-transform mx-2 shadow-[0_2px_16px_rgba(255,255,255,0.12)]"
           >
-            {isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" className="ml-1" />}
+            {isPlaying
+              ? <Pause size={17} fill="#000" className="text-black" />
+              : <Play size={17} fill="#000" className="text-black ml-0.5" />
+            }
           </button>
-          <button onClick={onNext} className="text-white/60 hover:text-white transition-colors">
-            <SkipForward size={20} />
+
+          {/* Next Ayah */}
+          <button onClick={onNext} className="p-1.5 text-white/40 hover:text-white transition-colors">
+            <SkipForward size={17} />
+          </button>
+
+          {/* Next Surah */}
+          <button
+            onClick={onNextSurah || undefined}
+            disabled={!onNextSurah}
+            className={`p-1.5 rounded-full transition-colors ${onNextSurah ? 'text-white/30 hover:text-white/60 hover:bg-white/[0.06]' : 'text-white/10 cursor-default'}`}
+            title={onNextSurah ? 'Next Surah' : ''}
+          >
+            <ChevronsRight size={16} />
           </button>
         </div>
-
-        {/* Close Button */}
-        <button onClick={onClose} className="absolute top-2 right-2 text-white/10 hover:text-white/50 z-20">
-          <X size={14} />
-        </button>
       </div>
     </div>
   );
@@ -595,26 +658,33 @@ export default function App() {
   // Audio State
   const [audioQueue, setAudioQueue] = useState<Ayah[]>([]);
   const [playingSurahName, setPlayingSurahName] = useState<string>('');
+  const [playingSurahNumber, setPlayingSurahNumber] = useState<number>(0);
   const [currentAudioIndex, setCurrentAudioIndex] = useState<number>(-1);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const audioRef = useRef<HTMLAudioElement>(new Audio());
+  const preloadRef = useRef<HTMLAudioElement>(new Audio()); // Preload next ayah
   // Track whether playback was initiated by a user gesture (for PWA autoplay policy)
   const userGesturePlayRef = useRef(false);
 
   const [scrollToAyah, setScrollToAyah] = useState<number | null>(null); // Number In Surah
   const [todaysDua, setTodaysDua] = useState(DAILY_DUAS[0]);
+  const [prayerTimes, setPrayerTimes] = useState<Record<string, string> | null>(null);
+  const [prayerCity, setPrayerCity] = useState<string>('');
 
-  // Navigation history & scroll position restoration
+  // Navigation history
   const viewHistoryRef = useRef<ViewState[]>([]);
-  const scrollPositionsRef = useRef<Record<string, number>>({});
-  const isRestoringScrollRef = useRef(false);
-  const [navKey, setNavKey] = useState(0); // incremented to force scroll reset on same-view navigations
+  const [navKey, setNavKey] = useState(0);
+
+  // Disable browser's automatic scroll restoration
+  useEffect(() => {
+    if ('scrollRestoration' in history) {
+      history.scrollRestoration = 'manual';
+    }
+  }, []);
 
   const navigateTo = useCallback((newView: ViewState) => {
-    // Save current scroll position before leaving
-    scrollPositionsRef.current[view] = window.scrollY;
-    // Push current view onto history stack (but not if navigating to surah from surah — prev/next)
+    // Push current view onto history stack (but not if navigating surah→surah)
     if (view !== newView) {
       if (!(view === 'surah' && newView === 'surah')) {
         viewHistoryRef.current.push(view);
@@ -626,10 +696,7 @@ export default function App() {
   }, [view]);
 
   const goBack = useCallback(() => {
-    // Save current scroll position
-    scrollPositionsRef.current[view] = window.scrollY;
     const prevView = viewHistoryRef.current.pop() || 'home';
-    isRestoringScrollRef.current = true;
     setView(prevView);
   }, [view]);
   const [showCongrats, setShowCongrats] = useState(false);
@@ -666,10 +733,81 @@ export default function App() {
         });
       }
     }
-    if (storedSettings) setSettings(JSON.parse(storedSettings));
+    if (storedSettings) {
+      const parsed = JSON.parse(storedSettings);
+      // Validate reciter ID is still in our list
+      if (parsed.reciter && !RECITERS.some((r: { id: string }) => r.id === parsed.reciter)) {
+        parsed.reciter = DEFAULT_SETTINGS.reciter;
+      }
+      setSettings(parsed);
+    }
 
     // Fetch Surah list
     fetchAllSurahs().then(setSurahs);
+
+    // Fetch prayer times based on user's location
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const { latitude, longitude } = pos.coords;
+          const today = new Date();
+          const dd = String(today.getDate()).padStart(2, '0');
+          const mm = String(today.getMonth() + 1).padStart(2, '0');
+          const yyyy = today.getFullYear();
+          fetch(`https://api.aladhan.com/v1/timings/${dd}-${mm}-${yyyy}?latitude=${latitude}&longitude=${longitude}&method=2`)
+            .then(r => r.json())
+            .then(data => {
+              if (data?.data?.timings) {
+                setPrayerTimes(data.data.timings);
+              }
+              if (data?.data?.meta?.timezone) {
+                // Extract city from timezone like "America/New_York" -> "New York"
+                const tz = data.data.meta.timezone;
+                const city = tz.split('/').pop()?.replace(/_/g, ' ') || '';
+                setPrayerCity(city);
+              }
+            })
+            .catch(() => {});
+        },
+        () => {
+          // Geolocation denied — use IP-based location fallback
+          const today = new Date();
+          const dd = String(today.getDate()).padStart(2, '0');
+          const mm = String(today.getMonth() + 1).padStart(2, '0');
+          const yyyy = today.getFullYear();
+          fetch('http://ip-api.com/json/?fields=lat,lon,city')
+            .then(r => r.json())
+            .then(geo => {
+              if (geo?.lat && geo?.lon) {
+                setPrayerCity(geo.city || '');
+                return fetch(`https://api.aladhan.com/v1/timings/${dd}-${mm}-${yyyy}?latitude=${geo.lat}&longitude=${geo.lon}&method=2`)
+                  .then(r => r.json())
+                  .then(data => {
+                    if (data?.data?.timings) {
+                      setPrayerTimes(data.data.timings);
+                      if (!geo.city && data?.data?.meta?.timezone) {
+                        setPrayerCity(data.data.meta.timezone.split('/').pop()?.replace(/_/g, ' ') || '');
+                      }
+                    }
+                  });
+              }
+            })
+            .catch(() => {
+              // Final fallback: Mecca
+              fetch(`https://api.aladhan.com/v1/timingsByAddress/${dd}-${mm}-${yyyy}?address=Mecca&method=2`)
+                .then(r => r.json())
+                .then(data => {
+                  if (data?.data?.timings) {
+                    setPrayerTimes(data.data.timings);
+                    setPrayerCity('Mecca');
+                  }
+                })
+                .catch(() => {});
+            });
+        },
+        { timeout: 5000 }
+      );
+    }
 
     // Set Random Dua
     setTodaysDua(DAILY_DUAS[Math.floor(Math.random() * DAILY_DUAS.length)]);
@@ -712,59 +850,110 @@ export default function App() {
     }
   };
 
-  // Scroll position management when view changes
+  // Always scroll to top on view change
+  // NOTE: #root is the actual scroll container (see index.css), not window
   useEffect(() => {
-    if (isRestoringScrollRef.current) {
-      // Restore saved scroll position
-      const saved = scrollPositionsRef.current[view] || 0;
-      // Use rAF to ensure DOM has rendered
-      requestAnimationFrame(() => {
-        window.scrollTo(0, saved);
-      });
-      isRestoringScrollRef.current = false;
-    } else {
-      window.scrollTo(0, 0);
-    }
+    const root = document.getElementById('root');
+    if (root) root.scrollTo(0, 0);
   }, [view, navKey]);
 
   // --- Audio Logic ---
 
-  // Helper to load and play a specific ayah on the audio element
-  const playAudioForAyah = useCallback((ayah: Ayah) => {
-    const audio = audioRef.current;
-    if (!ayah.audio) return;
-
-    if (audio.src !== ayah.audio) {
-      audio.src = ayah.audio;
-      audio.load();
+  // Preload the next ayah's audio to eliminate gaps
+  const preloadNext = useCallback((queue: Ayah[], idx: number) => {
+    const nextAyah = queue[idx + 1];
+    if (nextAyah?.audio) {
+      preloadRef.current.src = nextAyah.audio;
+      preloadRef.current.load();
     }
-    audio.playbackRate = playbackSpeed;
-    audio.play()
-      .then(() => setIsPlaying(true))
-      .catch(e => console.error("Audio play error", e));
-  }, [playbackSpeed]);
+  }, []);
 
-  // When track index changes (e.g. auto-advance on ended, next/prev),
-  // play the new track — allowed because playback was already user-initiated.
+  // Setup onended handler (uses ref to always read latest state)
+  const currentAudioIndexRef = useRef(currentAudioIndex);
+  currentAudioIndexRef.current = currentAudioIndex;
+  const audioQueueRef = useRef(audioQueue);
+  audioQueueRef.current = audioQueue;
+  const playingSurahNumberRef = useRef(playingSurahNumber);
+  playingSurahNumberRef.current = playingSurahNumber;
+
+  // Auto-continue: load next surah when current one ends
+  const loadNextSurahAudio = useCallback(async () => {
+    const nextNum = playingSurahNumberRef.current + 1;
+    if (nextNum > 114) {
+      setIsPlaying(false);
+      setCurrentAudioIndex(-1);
+      return;
+    }
+    const nextDetails = await fetchSurahDetails(nextNum, settings.reciter);
+    if (nextDetails && nextDetails.ayahs.length > 0) {
+      const nextSurahName = surahs.find(s => s.number === nextNum)?.englishName || nextDetails.englishName;
+      setPlayingSurahName(nextSurahName);
+      setPlayingSurahNumber(nextNum);
+      setAudioQueue(nextDetails.ayahs);
+      setCurrentAudioIndex(0);
+    } else {
+      setIsPlaying(false);
+      setCurrentAudioIndex(-1);
+    }
+  }, [surahs, settings.reciter]);
+
+  const loadPrevSurahAudio = useCallback(async () => {
+    const prevNum = playingSurahNumberRef.current - 1;
+    if (prevNum < 1) return;
+    const prevDetails = await fetchSurahDetails(prevNum, settings.reciter);
+    if (prevDetails && prevDetails.ayahs.length > 0) {
+      const prevSurahName = surahs.find(s => s.number === prevNum)?.englishName || prevDetails.englishName;
+      setPlayingSurahName(prevSurahName);
+      setPlayingSurahNumber(prevNum);
+      setAudioQueue(prevDetails.ayahs);
+      setCurrentAudioIndex(0);
+    }
+  }, [surahs, settings.reciter]);
+
+  // Attach onended once, reading from refs so it's always current
+  useEffect(() => {
+    audioRef.current.onended = () => {
+      const idx = currentAudioIndexRef.current;
+      const queue = audioQueueRef.current;
+      if (idx < queue.length - 1) {
+        setCurrentAudioIndex(idx + 1);
+      } else {
+        loadNextSurahAudio();
+      }
+    };
+  }, [loadNextSurahAudio]);
+
+  // When track index changes, play the new track
   useEffect(() => {
     if (currentAudioIndex >= 0 && currentAudioIndex < audioQueue.length) {
       // Skip if the initial play was already handled by playSurah directly
       if (userGesturePlayRef.current) {
         userGesturePlayRef.current = false;
+        preloadNext(audioQueue, currentAudioIndex);
         return;
       }
-      playAudioForAyah(audioQueue[currentAudioIndex]);
-    } else {
+      const ayah = audioQueue[currentAudioIndex];
+      if (!ayah.audio) return;
+      const audio = audioRef.current;
+      audio.src = ayah.audio;
+      audio.load();
+      audio.playbackRate = playbackSpeed;
+      audio.play()
+        .then(() => setIsPlaying(true))
+        .catch(e => console.error("Audio play error", e));
+      preloadNext(audioQueue, currentAudioIndex);
+    } else if (currentAudioIndex === -1) {
       audioRef.current.pause();
       setIsPlaying(false);
     }
-  }, [currentAudioIndex, audioQueue, playAudioForAyah]);
+  }, [currentAudioIndex, audioQueue, playbackSpeed, preloadNext]);
 
   // Sync playback speed to audio element when speed changes
   useEffect(() => {
     audioRef.current.playbackRate = playbackSpeed;
   }, [playbackSpeed]);
 
+  // Sync play/pause state
   useEffect(() => {
     const audio = audioRef.current;
     if (isPlaying && audio.paused && currentAudioIndex >= 0) {
@@ -773,26 +962,6 @@ export default function App() {
       audio.pause();
     }
   }, [isPlaying]);
-
-  // Setup onended handler (uses ref to always read latest state)
-  const currentAudioIndexRef = useRef(currentAudioIndex);
-  currentAudioIndexRef.current = currentAudioIndex;
-  const audioQueueRef = useRef(audioQueue);
-  audioQueueRef.current = audioQueue;
-
-  useEffect(() => {
-    const audio = audioRef.current;
-    audio.onended = () => {
-      const idx = currentAudioIndexRef.current;
-      const queue = audioQueueRef.current;
-      if (idx < queue.length - 1) {
-        setCurrentAudioIndex(idx + 1);
-      } else {
-        setIsPlaying(false);
-        setCurrentAudioIndex(-1);
-      }
-    };
-  }, []);
 
   const playSurah = (surahDetails: SurahDetails, startIndex: number = 0) => {
     // Play directly from user gesture to satisfy PWA autoplay policy
@@ -805,8 +974,11 @@ export default function App() {
       audio.play()
         .then(() => setIsPlaying(true))
         .catch(e => console.error("Audio play error", e));
+      // Preload next ayah
+      preloadNext(surahDetails.ayahs, startIndex);
     }
     setPlayingSurahName(surahDetails.englishName);
+    setPlayingSurahNumber(surahDetails.number);
     setAudioQueue(surahDetails.ayahs);
     userGesturePlayRef.current = true; // prevent effect from double-playing
     setCurrentAudioIndex(startIndex);
@@ -816,12 +988,41 @@ export default function App() {
   const handleNextTrack = () => {
     if (currentAudioIndex < audioQueue.length - 1) {
       setCurrentAudioIndex(prev => prev + 1);
+    } else {
+      // Last ayah — skip to next surah
+      loadNextSurahAudio();
     }
   };
 
   const handlePrevTrack = () => {
     if (currentAudioIndex > 0) {
       setCurrentAudioIndex(prev => prev - 1);
+    }
+  };
+
+  const handleNextSurah = async () => {
+    await loadNextSurahAudio();
+    // Navigate to the surah view
+    const nextNum = playingSurahNumber + 1;
+    if (nextNum <= 114) {
+      const details = await fetchSurahDetails(nextNum, settings.reciter);
+      if (details) {
+        setActiveSurah(details);
+        navigateTo('surah');
+      }
+    }
+  };
+
+  const handlePrevSurah = async () => {
+    await loadPrevSurahAudio();
+    // Navigate to the surah view
+    const prevNum = playingSurahNumber - 1;
+    if (prevNum >= 1) {
+      const details = await fetchSurahDetails(prevNum, settings.reciter);
+      if (details) {
+        setActiveSurah(details);
+        navigateTo('surah');
+      }
     }
   };
 
@@ -880,7 +1081,7 @@ export default function App() {
     // Navigate immediately so the user sees the surah view (with loading spinner)
     setActiveSurah(null);
     navigateTo('surah');
-    const details = await fetchSurahDetails(surahNumber);
+    const details = await fetchSurahDetails(surahNumber, settings.reciter);
     setActiveSurah(details);
     if (details) {
       trackSurahOpened(surahNumber, details.englishName, ayah);
@@ -1222,6 +1423,7 @@ export default function App() {
   }
 
   const HomeView = () => {
+    const [showStreakModal, setShowStreakModal] = useState(false);
     const lastReadName = user?.lastRead ? surahs.find(s => s.number === user.lastRead?.surah)?.englishName : null;
     const lastReadSurah = user?.lastRead ? surahs.find(s => s.number === user.lastRead?.surah) : null;
 
@@ -1245,175 +1447,354 @@ export default function App() {
     const todayStr = new Date().toISOString().split('T')[0];
     const pagesReadToday = Object.values(progressMap).filter(d => d === todayStr).length;
 
-    // Timeline Calculation
+    // Day calculation
     const startTimestamp = ramadanGoal?.startDate || Date.now();
     const dayDiff = Math.floor((Date.now() - startTimestamp) / (1000 * 60 * 60 * 24)) + 1;
     const currentDay = Math.min(Math.max(1, dayDiff), ramadanGoal?.daysDuration || 30);
 
-    // Scroll reference for timeline
-    const timelineRef = useRef<HTMLDivElement>(null);
-    useEffect(() => {
-      if (timelineRef.current) {
-        // center the current day
-        const dayEl = document.getElementById(`day-${currentDay}`);
-        if (dayEl) {
-          const offset = dayEl.offsetLeft - timelineRef.current.clientWidth / 2 + dayEl.clientWidth / 2;
-          timelineRef.current.scrollTo({ left: offset, behavior: 'smooth' });
-        }
-      }
-    }, [currentDay, view]);
-
     return (
-      <div className="min-h-[100dvh] pt-14 px-5 pb-36 animate-fade-in space-y-12">
+      <div className="min-h-[100dvh] pt-14 px-5 pb-36 animate-fade-in space-y-5">
 
-        {/* Top Atmosphere */}
-        <div className="flex justify-between items-start">
-          <div>
-            <p className={`text-xs font-bold uppercase tracking-[0.3em] ${currentTheme.text} opacity-80 mb-2`}>{formattedDate}</p>
-            <h1 className="text-4xl font-arabic font-bold text-white leading-tight">Salam, <br /> <span className="text-white/60">{user?.name}</span></h1>
-          </div>
-          <div className="relative">
-            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-white/10 to-white/5 border border-white/10 flex items-center justify-center overflow-hidden">
-              <span className="font-bold text-lg">{user?.name.charAt(0)}</span>
+        {/* Header */}
+        <div className="relative">
+          {/* Greeting row */}
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-white/40 text-[11px] font-medium uppercase tracking-[0.15em] mb-1">
+                {(() => { const h = new Date().getHours(); return h < 5 ? 'Good Night' : h < 12 ? 'Good Morning' : h < 17 ? 'Good Afternoon' : 'Good Evening'; })()}
+              </p>
+              <h1 className="text-[26px] font-bold text-white leading-none tracking-tight">{user?.name}</h1>
+              <p className="text-white/30 text-[11px] mt-1.5">{formattedDate}</p>
             </div>
-            {user?.streak && user.streak > 0 && (
-              <div className={`absolute -bottom-2 -left-2 bg-black border ${currentTheme.border} ${currentTheme.text} text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1`}>
-                <Flame size={8} fill="currentColor" /> {user.streak}
+            <div className="flex items-center gap-2 mt-1">
+              {user?.streak && user.streak > 0 ? (
+                <div
+                  onClick={() => setShowStreakModal(true)}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-full cursor-pointer hover:bg-white/10 transition-colors`}
+                  style={{background: 'rgba(255,255,255,0.05)'}}
+                >
+                  <Flame size={11} className={currentTheme.text} fill="currentColor" />
+                  <span className={`text-[11px] font-bold ${currentTheme.text}`}>{user.streak}</span>
+                </div>
+              ) : null}
+              <div
+                onClick={() => navigateTo('settings')}
+                className="w-9 h-9 rounded-full bg-white/[0.06] border border-white/[0.08] flex items-center justify-center cursor-pointer hover:bg-white/10 transition-colors"
+              >
+                <span className="font-semibold text-sm text-white/70">{user?.name.charAt(0)}</span>
               </div>
-            )}
+            </div>
           </div>
         </div>
 
-        {/* --- RAMADAN JOURNEY MAP (The Hero) --- */}
-        <section className="relative">
-          {ramadanGoal && ramadanGoal.isActive ? (
-            <div className="relative">
-              {/* Glowing Aura */}
-              <div className={`absolute inset-0 ${currentTheme.bg} opacity-10 blur-[60px] rounded-full`}></div>
+        {/* Streak Modal */}
+        {showStreakModal && user?.streak && (() => {
+          const streak = user.streak;
+          const milestone = streak >= 365 ? 365 : streak >= 100 ? 100 : streak >= 30 ? 30 : streak >= 7 ? 7 : streak >= 3 ? 3 : 0;
+          const nextMilestone = streak >= 365 ? null : streak >= 100 ? 365 : streak >= 30 ? 100 : streak >= 7 ? 30 : streak >= 3 ? 7 : 3;
+          const encouragements = [
+            { min: 1, max: 2, msg: "Every journey begins with a single step. You've started yours!" },
+            { min: 3, max: 6, msg: "MashaAllah! You're building a beautiful habit." },
+            { min: 7, max: 13, msg: "A full week! Your consistency is inspiring." },
+            { min: 14, max: 29, msg: "SubhanAllah! Two weeks of dedication. Keep going!" },
+            { min: 30, max: 59, msg: "A whole month! You're truly committed to the Quran." },
+            { min: 60, max: 99, msg: "Incredible dedication! The Quran is becoming part of your daily life." },
+            { min: 100, max: 364, msg: "100+ days! You're among the most dedicated readers. MashaAllah!" },
+            { min: 365, max: Infinity, msg: "A full year! May Allah reward your extraordinary dedication." },
+          ];
+          const message = encouragements.find(e => streak >= e.min && streak <= e.max)?.msg || "Keep reading!";
 
-              {/* The Map Card */}
-              <GlassCard className={`relative overflow-hidden !border-opacity-30 ${currentTheme.border} bg-gradient-to-br from-white/5 to-white/0`}>
-                {/* Header */}
-                <div className="p-6 pb-2 flex justify-between items-end">
-                  <div>
-                    <h3 className={`font-arabic text-2xl font-bold ${currentTheme.text} brightness-150`}>The Journey</h3>
-                    <p className={`text-xs ${currentTheme.text} opacity-60 uppercase tracking-widest mt-1`}>Day {currentDay} of {ramadanGoal.daysDuration}</p>
+          return (
+            <div
+              className="fixed inset-0 z-[100] flex items-center justify-center p-5 bg-black/85 backdrop-blur-md animate-fade-in"
+              onClick={() => setShowStreakModal(false)}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-xs bg-zinc-900/95 border border-white/10 rounded-3xl overflow-hidden shadow-2xl"
+              >
+                {/* Top glow area */}
+                <div className={`relative pt-8 pb-6 px-6 bg-gradient-to-b ${currentTheme.gradient} bg-opacity-10`} style={{background: 'linear-gradient(to bottom, rgba(255,255,255,0.04), transparent)'}}>
+                  {/* Flame icon */}
+                  <div className="flex justify-center mb-4">
+                    <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${currentTheme.gradient} flex items-center justify-center shadow-lg`}>
+                      <Flame size={32} className="text-black" fill="currentColor" />
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-3xl font-bold text-white">{pagesReadToday}<span className="text-sm text-white/40 font-normal">/{dailyTarget}</span></p>
-                    <p className="text-[10px] text-white/30 uppercase">Pages Today</p>
+
+                  {/* Streak count */}
+                  <div className="text-center">
+                    <p className={`text-5xl font-bold ${currentTheme.text}`}>{streak}</p>
+                    <p className="text-white/40 text-xs font-medium uppercase tracking-[0.15em] mt-1">{streak === 1 ? 'Day Streak' : 'Day Streak'}</p>
                   </div>
                 </div>
 
-                {/* Timeline Map */}
-                <div
-                  ref={timelineRef}
-                  className="flex overflow-x-auto no-scrollbar py-8 px-6 gap-4 snap-x snap-mandatory"
-                >
-                  {Array.from({ length: ramadanGoal.daysDuration }).map((_, i) => {
-                    const dayNum = i + 1;
-                    const isPast = dayNum < currentDay;
-                    const isCurrent = dayNum === currentDay;
+                {/* Message */}
+                <div className="px-6 py-5">
+                  <p className="text-white/70 text-[13px] leading-relaxed text-center">{message}</p>
 
-                    return (
-                      <div
-                        key={dayNum}
-                        id={`day-${dayNum}`}
-                        className={`snap-center flex-shrink-0 flex flex-col items-center gap-3 transition-all duration-500 ${isCurrent ? 'scale-110' : 'opacity-50 scale-90'}`}
-                      >
-                        <div className={`w-12 h-12 rounded-full flex items-center justify-center border-2 transition-all shadow-lg
-                                            ${isCurrent ? `${currentTheme.bg} ${currentTheme.border} text-black ${currentTheme.glow}` :
-                            isPast ? `bg-black/40 ${currentTheme.border} ${currentTheme.text} border-opacity-30` : 'bg-black/40 border-white/10 text-white/20'}
-                                        `}>
-                          {isPast ? <CheckCircle2 size={18} /> : <span className="font-bold font-arabic">{dayNum}</span>}
-                        </div>
-                        {isCurrent && <div className={`w-1.5 h-1.5 rounded-full ${currentTheme.bg} animate-pulse`}></div>}
+                  {/* Milestone badges */}
+                  {milestone > 0 && (
+                    <div className="mt-4 flex items-center justify-center gap-1.5">
+                      <CheckCircle2 size={12} className={currentTheme.text} />
+                      <span className={`text-[11px] font-semibold ${currentTheme.text}`}>{milestone}-day milestone reached!</span>
+                    </div>
+                  )}
+
+                  {/* Next milestone */}
+                  {nextMilestone && (
+                    <div className="mt-3 bg-white/[0.04] rounded-xl p-3">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[10px] text-white/30 uppercase tracking-wider font-bold">Next milestone</span>
+                        <span className="text-[10px] text-white/30">{nextMilestone - streak} days left</span>
                       </div>
-                    )
-                  })}
+                      <div className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                        <div
+                          className={`h-full bg-gradient-to-r ${currentTheme.gradient} rounded-full transition-all`}
+                          style={{ width: `${Math.min((streak / nextMilestone) * 100, 100)}%` }}
+                        ></div>
+                      </div>
+                      <p className="text-center mt-1.5">
+                        <span className={`text-[11px] font-bold ${currentTheme.text}`}>{nextMilestone} days</span>
+                      </p>
+                    </div>
+                  )}
                 </div>
 
-                {/* Footer Progress Line */}
-                <div className="bg-black/20 h-1.5 w-full mt-2">
-                  <div className={`h-full bg-gradient-to-r ${currentTheme.gradient} shadow-[0_0_10px_currentColor]`} style={{ width: `${(totalPagesRead / totalGoalPages) * 100}%` }}></div>
+                {/* Close button */}
+                <div className="px-6 pb-5">
+                  <button
+                    onClick={() => setShowStreakModal(false)}
+                    className={`w-full py-2.5 rounded-xl text-sm font-semibold text-black bg-gradient-to-r ${currentTheme.gradient} hover:opacity-90 transition-opacity`}
+                  >
+                    Keep Going!
+                  </button>
                 </div>
-              </GlassCard>
+              </div>
             </div>
-          ) : (
-            <GlassCard onClick={() => navigateTo('ramadanSetup')} className={`p-8 flex flex-col items-center text-center gap-4 group border-dashed border-white/20 hover:${currentTheme.border} hover:border-opacity-50 transition-colors`}>
-              <div className={`w-16 h-16 rounded-full ${currentTheme.bg} bg-opacity-10 flex items-center justify-center group-hover:bg-opacity-20 transition-colors`}>
-                <MapPin size={32} className={currentTheme.text} />
+          );
+        })()}
+
+        {/* --- PRAYER TIMES (inline after header) --- */}
+        {prayerTimes && (
+          <div className="flex justify-between bg-white/[0.03] rounded-2xl px-2 py-3 border border-white/[0.04]">
+            {[
+              { name: 'Fajr', key: 'Fajr', icon: Sunrise },
+              { name: 'Dhuhr', key: 'Dhuhr', icon: Sun },
+              { name: 'Asr', key: 'Asr', icon: CloudSun },
+              { name: 'Maghrib', key: 'Maghrib', icon: Sunset },
+              { name: 'Isha', key: 'Isha', icon: Moon },
+            ].map((p) => {
+              const Icon = p.icon;
+              const now = new Date();
+              const nowMins = now.getHours() * 60 + now.getMinutes();
+              const timeStr = (prayerTimes[p.key] || '--:--').replace(/\s*\(.*\)/, '');
+              const [h, m] = timeStr.split(':').map(Number);
+              const prayerMins = h * 60 + m;
+              // Determine if this is the next prayer
+              const allPrayers = ['Fajr','Dhuhr','Asr','Maghrib','Isha'];
+              let nextKey = '';
+              for (const k of allPrayers) {
+                const t = (prayerTimes[k] || '').replace(/\s*\(.*\)/, '');
+                const [hh, mm] = t.split(':').map(Number);
+                if (hh * 60 + mm > nowMins) { nextKey = k; break; }
+              }
+              if (!nextKey) nextKey = 'Fajr';
+              const isNext = p.key === nextKey;
+              return (
+                <div key={p.key} className={`flex flex-col items-center gap-1.5 flex-1 py-1.5 rounded-xl ${isNext ? 'bg-white/[0.06]' : ''}`}>
+                  <Icon size={14} className={isNext ? currentTheme.text : 'text-white/25'} />
+                  <span className={`text-[10px] font-medium ${isNext ? 'text-white/90' : 'text-white/35'}`}>{p.name}</span>
+                  <span className={`text-[11px] font-bold tabular-nums ${isNext ? currentTheme.text : 'text-white/45'}`}>{timeStr}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* --- CONTINUE READING --- */}
+        <section
+          onClick={() => handleSurahClick(user?.lastRead?.surah || 1, user?.lastRead?.ayah || 1)}
+          className="group cursor-pointer active:scale-[0.97] transition-transform"
+        >
+          <div className="relative rounded-2xl overflow-hidden">
+            {/* Background gradient glow */}
+            <div className={`absolute inset-0 bg-gradient-to-br ${currentTheme.gradient} opacity-[0.08]`}></div>
+            <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
+
+            <div className="relative px-5 py-5">
+              {/* Top: label */}
+              <div className="flex items-center gap-1.5 mb-3">
+                <BookOpen size={11} className={currentTheme.text} />
+                <span className={`text-[10px] ${currentTheme.text} font-bold uppercase tracking-[0.15em]`}>Continue Reading</span>
               </div>
-              <div>
-                <h3 className="text-xl font-bold text-white">Start Your Map</h3>
-                <p className="text-white/50 text-sm mt-2 max-w-[200px] mx-auto">Set a Ramadan goal to visualize your daily journey.</p>
+
+              {/* Middle: Surah info row */}
+              <div className="flex items-end justify-between">
+                <div>
+                  <h3 className="text-[22px] font-bold text-white leading-none">{lastReadName || 'Al-Fatiha'}</h3>
+                  <p className="text-white/35 text-[12px] mt-1.5">
+                    Ayah {user?.lastRead?.ayah || 1}
+                    {lastReadSurah ? <span className="text-white/20"> · </span> : ''}
+                    {lastReadSurah ? <span className="text-white/25">{lastReadSurah.englishNameTranslation}</span> : ''}
+                  </p>
+                </div>
+
+                {/* Play circle */}
+                <div className={`w-10 h-10 rounded-full border-2 ${currentTheme.border} flex items-center justify-center group-hover:bg-white/10 transition-colors`}>
+                  <Play size={16} fill="white" className="text-white ml-0.5" />
+                </div>
               </div>
-              <button className={`mt-2 ${currentTheme.text} text-sm font-bold uppercase tracking-widest flex items-center gap-2`}>
-                Create Goal <ArrowRight size={16} />
-              </button>
+
+              {/* Bottom: thin progress accent */}
+              {lastReadSurah && (
+                <div className="mt-4 h-[2px] rounded-full bg-white/[0.06] overflow-hidden">
+                  <div
+                    className={`h-full bg-gradient-to-r ${currentTheme.gradient} rounded-full transition-all duration-500`}
+                    style={{ width: `${Math.min(((user?.lastRead?.ayah || 1) / (lastReadSurah.numberOfAyahs || 1)) * 100, 100)}%` }}
+                  ></div>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* --- RAMADAN JOURNEY (The Hero) --- */}
+        <section className="relative">
+          {ramadanGoal && ramadanGoal.isActive ? (() => {
+            const overallPercent = Math.min((totalPagesRead / totalGoalPages) * 100, 100);
+            const dailyPercent = Math.min((pagesReadToday / dailyTarget) * 100, 100);
+            const radius = 54;
+            const circumference = 2 * Math.PI * radius;
+            const dailyStroke = circumference - (dailyPercent / 100) * circumference;
+            const daysLeft = Math.max(0, ramadanGoal.daysDuration - currentDay);
+
+            return (
+              <div className="relative">
+                <div className={`absolute inset-0 ${currentTheme.bg} opacity-[0.07] blur-[80px] rounded-full scale-110`}></div>
+
+                <GlassCard className={`relative overflow-hidden !border-opacity-20 ${currentTheme.border}`}>
+                  {/* Subtle gradient background */}
+                  <div className={`absolute inset-0 bg-gradient-to-br ${currentTheme.gradient} opacity-[0.03]`}></div>
+
+                  <div className="relative p-6">
+                    {/* Top row: Title + Day badge */}
+                    <div className="flex items-center justify-between mb-6">
+                      <div>
+                        <h3 className="text-lg font-bold text-white">Your Journey</h3>
+                        <p className="text-xs text-white/40 mt-0.5">{ramadanGoal.targetKhatams} Khatam{ramadanGoal.targetKhatams > 1 ? 's' : ''} · {ramadanGoal.daysDuration} Days</p>
+                      </div>
+                      <div className={`px-3 py-1.5 rounded-full border ${currentTheme.border} border-opacity-30 bg-white/5`}>
+                        <span className={`text-xs font-bold ${currentTheme.text}`}>Day {currentDay}</span>
+                      </div>
+                    </div>
+
+                    {/* Center: Ring + Stats */}
+                    <div className="flex items-center gap-6">
+                      {/* Circular progress ring */}
+                      <div className="relative shrink-0">
+                        <svg width="128" height="128" viewBox="0 0 128 128" className="-rotate-90">
+                          {/* Background track */}
+                          <circle cx="64" cy="64" r={radius} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8" />
+                          {/* Overall progress (subtle) */}
+                          <circle cx="64" cy="64" r={radius} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="8"
+                            strokeDasharray={circumference} strokeDashoffset={circumference - (overallPercent / 100) * circumference}
+                            strokeLinecap="round" className="transition-all duration-1000" />
+                          {/* Daily progress (accent) */}
+                          <circle cx="64" cy="64" r={radius} fill="none" strokeWidth="8"
+                            strokeDasharray={circumference} strokeDashoffset={dailyStroke}
+                            strokeLinecap="round"
+                            className={`transition-all duration-1000`}
+                            style={{ stroke: `var(--ring-color)` }}
+                          />
+                        </svg>
+                        {/* Center text */}
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                          <span className={`text-3xl font-bold ${currentTheme.text}`}>{pagesReadToday}</span>
+                          <span className="text-[10px] text-white/30 font-medium">of {dailyTarget}</span>
+                        </div>
+                        {/* Apply accent color as CSS variable */}
+                        <style>{`:root { --ring-color: ${
+                          currentTheme.text.includes('emerald') ? '#34d399' :
+                          currentTheme.text.includes('blue') ? '#60a5fa' :
+                          currentTheme.text.includes('rose') ? '#fb7185' :
+                          currentTheme.text.includes('amber') ? '#fbbf24' :
+                          '#a78bfa'
+                        }; }`}</style>
+                      </div>
+
+                      {/* Stats column */}
+                      <div className="flex-1 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-[10px] text-white/30 uppercase tracking-wider font-bold">Pages Today</p>
+                            <p className="text-white font-semibold">{pagesReadToday} <span className="text-white/30 text-sm">/ {dailyTarget}</span></p>
+                          </div>
+                          {dailyPercent >= 100 && (
+                            <div className={`w-7 h-7 rounded-full ${currentTheme.bg} flex items-center justify-center`}>
+                              <CheckCircle2 size={14} className="text-black" />
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="h-px bg-white/5"></div>
+
+                        <div>
+                          <p className="text-[10px] text-white/30 uppercase tracking-wider font-bold">Overall</p>
+                          <p className="text-white font-semibold">{totalPagesRead} <span className="text-white/30 text-sm">/ {totalGoalPages} pages</span></p>
+                        </div>
+
+                        <div className="h-px bg-white/5"></div>
+
+                        <div className="flex gap-4">
+                          <div>
+                            <p className="text-[10px] text-white/30 uppercase tracking-wider font-bold">Left</p>
+                            <p className="text-white/70 text-sm font-medium">{daysLeft}d</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-white/30 uppercase tracking-wider font-bold">Progress</p>
+                            <p className={`text-sm font-medium ${currentTheme.text}`}>{overallPercent.toFixed(0)}%</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bottom progress bar */}
+                  <div className="h-1 bg-white/[0.04]">
+                    <div className={`h-full bg-gradient-to-r ${currentTheme.gradient} transition-all duration-1000`} style={{ width: `${overallPercent}%` }}></div>
+                  </div>
+                </GlassCard>
+              </div>
+            );
+          })() : (
+            <GlassCard onClick={() => navigateTo('ramadanSetup')} className={`p-6 flex items-center gap-5 group hover:border-white/20 transition-colors`}>
+              <div className={`w-14 h-14 rounded-2xl ${currentTheme.bg} bg-opacity-10 flex items-center justify-center shrink-0 group-hover:bg-opacity-20 transition-colors`}>
+                <Target size={24} className={currentTheme.text} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-bold text-white">Set a Reading Goal</h3>
+                <p className="text-white/40 text-sm mt-0.5">Track your daily Quran pages</p>
+              </div>
+              <ArrowRight size={18} className="text-white/20 group-hover:text-white/50 transition-colors shrink-0" />
             </GlassCard>
           )}
         </section>
 
-        {/* --- CONTINUE READING (Glass Bar) --- */}
-        <section>
-          <div className="flex items-center gap-2 mb-4 opacity-60">
-            <BookOpen size={14} />
-            <span className="text-xs font-bold uppercase tracking-[0.2em]">Current Station</span>
-          </div>
-
-          <GlassCard onClick={() => {
-            handleSurahClick(user?.lastRead?.surah || 1, user?.lastRead?.ayah || 1);
-          }} className="group relative overflow-hidden p-0">
-            <div className={`absolute inset-0 bg-gradient-to-r ${currentTheme.gradient} opacity-0 group-hover:opacity-10 transition-opacity duration-700`}></div>
-
-            <div className="p-6 flex items-center justify-between relative z-10">
-              <div>
-                <p className={`text-xs ${currentTheme.text} font-bold uppercase tracking-wider mb-1`}>Resume Recitation</p>
-                <h3 className="text-2xl font-bold text-white mb-1">{lastReadName || 'Al-Fatiha'}</h3>
-                <p className="text-white/40 text-sm">Ayah {user?.lastRead?.ayah || 1}</p>
-              </div>
-              <div className={`w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center group-hover:${currentTheme.bg} group-hover:text-black group-hover:border-transparent transition-all duration-300 shadow-lg`}>
-                <Play size={20} fill="currentColor" className="ml-1" />
+        {/* --- DAILY WISDOM --- */}
+        <section className="pb-8">
+          <GlassCard className="p-5 relative overflow-hidden">
+            {/* Decorative accent */}
+            <div className={`absolute top-0 left-0 w-1 h-full bg-gradient-to-b ${currentTheme.gradient}`}></div>
+            <div className="pl-4">
+              <p className="font-quran text-[22px] text-white/90 leading-[2] mb-3">{todaysDua.arabic}</p>
+              <p className="text-white/50 text-[13px] font-light leading-relaxed italic">"{todaysDua.english}"</p>
+              <div className="flex items-center justify-between mt-3">
+                <span className={`text-[10px] ${currentTheme.text} font-bold uppercase tracking-widest`}>{todaysDua.source}</span>
+                <span className="text-[10px] text-white/20 uppercase tracking-wider">Daily Dua</span>
               </div>
             </div>
           </GlassCard>
-        </section>
-
-        {/* --- QUICK ACCESS (Tiles) --- */}
-        <section>
-          <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-white/40 mb-5 pl-1">Holy Chapters</h3>
-          <div className="grid grid-cols-2 gap-3">
-            {POPULAR_SURAHS.slice(0, 4).map(s => (
-              <GlassCard
-                key={s.number}
-                onClick={() => handleSurahClick(s.number)}
-                className="p-4 flex flex-col justify-between h-32 group hover:bg-white/10"
-              >
-                <div className="flex justify-between items-start">
-                  <span className="text-xs font-bold text-white/30">#{s.number}</span>
-                  <ArrowRight size={14} className="text-white/0 group-hover:text-white/50 -translate-x-2 group-hover:translate-x-0 transition-all" />
-                </div>
-                <div>
-                  <span className="font-arabic text-2xl text-white/90 mb-1 block">{s.arabic}</span>
-                  <span className="text-sm font-medium text-white/60">{s.name}</span>
-                </div>
-              </GlassCard>
-            ))}
-          </div>
-        </section>
-
-        {/* --- DAILY WISDOM --- */}
-        <section className="pb-8">
-          <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-white/40 mb-5 pl-1">Daily Wisdom</h3>
-          <div className="relative">
-            <div className={`absolute -left-2 top-0 bottom-0 w-1 bg-gradient-to-b ${currentTheme.gradient} opacity-50`}></div>
-            <div className="pl-6 py-2">
-              <p className="font-quran text-2xl text-white/90 leading-loose mb-4">{todaysDua.arabic}</p>
-              <p className="text-white/60 italic text-sm font-light leading-relaxed mb-2">"{todaysDua.english}"</p>
-              <p className={`text-[10px] ${currentTheme.text} font-bold uppercase tracking-widest`}>{todaysDua.source}</p>
-            </div>
-          </div>
         </section>
       </div>
     );
@@ -1421,55 +1802,122 @@ export default function App() {
 
   const SurahListView = () => {
     const [searchTerm, setSearchTerm] = useState('');
+    const [filterType, setFilterType] = useState<'all' | 'meccan' | 'medinan'>('all');
 
-    const filteredSurahs = surahs.filter(s =>
-      s.englishName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.englishNameTranslation.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.number.toString().includes(searchTerm)
-    );
+    const filteredSurahs = surahs.filter(s => {
+      const matchesSearch = s.englishName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        s.englishNameTranslation.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        s.number.toString().includes(searchTerm);
+      const matchesFilter = filterType === 'all' ||
+        (filterType === 'meccan' && s.revelationType === 'Meccan') ||
+        (filterType === 'medinan' && s.revelationType === 'Medinan');
+      return matchesSearch && matchesFilter;
+    });
 
     return (
-      <div className="min-h-[100dvh] pt-12 px-4 pb-32 animate-fade-in">
-        <h2 className="text-3xl font-bold mb-6">Quran</h2>
-
-        {/* Search Bar */}
-        <div className="relative mb-6">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40" size={20} />
-          <input
-            type="text"
-            placeholder="Search Surah..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className={`w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-white placeholder-white/40 focus:outline-none focus:${currentTheme.border} focus:border-opacity-50 transition-colors`}
-          />
+      <div className="min-h-[100dvh] pt-12 px-5 pb-32 animate-fade-in">
+        {/* Title + streak/profile */}
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="text-2xl font-bold text-white">Al-Quran</h2>
+            <p className="text-white/30 text-xs mt-0.5">{surahs.length} Surahs · 6236 Ayahs</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {user?.streak && user.streak > 0 ? (
+              <div className="flex items-center gap-1 px-2.5 py-1 rounded-full cursor-pointer hover:bg-white/10 transition-colors" style={{background: 'rgba(255,255,255,0.05)'}}>
+                <Flame size={11} className={currentTheme.text} fill="currentColor" />
+                <span className={`text-[11px] font-bold ${currentTheme.text}`}>{user.streak}</span>
+              </div>
+            ) : null}
+            <div
+              onClick={() => navigateTo('settings')}
+              className="w-9 h-9 rounded-full bg-white/[0.06] border border-white/[0.08] flex items-center justify-center cursor-pointer hover:bg-white/10 transition-colors"
+            >
+              <span className="font-semibold text-sm text-white/70">{user?.name?.charAt(0)}</span>
+            </div>
+          </div>
         </div>
 
-        {/* List */}
-        <div className="space-y-3">
-          {filteredSurahs.map((surah) => (
-            <GlassCard
-              key={surah.number}
-              onClick={() => handleSurahClick(surah.number)}
-              className={`p-4 flex items-center justify-between group hover:border-opacity-30 hover:${currentTheme.border}`}
+        {/* Search */}
+        <div className="relative mb-4">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30" size={16} />
+          <input
+            type="text"
+            placeholder="Search by name or number..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full bg-white/[0.04] border border-white/[0.06] rounded-xl py-3 pl-10 pr-4 text-sm text-white placeholder-white/30 focus:outline-none focus:border-white/20 transition-colors"
+          />
+          {searchTerm && (
+            <button onClick={() => setSearchTerm('')} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        {/* Filter chips */}
+        <div className="flex gap-2 mb-5">
+          {(['all', 'meccan', 'medinan'] as const).map(f => (
+            <button
+              key={f}
+              onClick={() => setFilterType(f)}
+              className={`px-3.5 py-1.5 rounded-full text-[11px] font-semibold uppercase tracking-wider transition-all ${
+                filterType === f
+                  ? `bg-gradient-to-r ${currentTheme.gradient} text-black`
+                  : 'bg-white/[0.04] text-white/40 hover:text-white/60 border border-white/[0.06]'
+              }`}
             >
-              <div className="flex items-center gap-4">
-                <div className={`w-10 h-10 rounded-lg bg-black/20 flex items-center justify-center font-medium ${currentTheme.text} border border-white/5 relative rotate-45 group-hover:bg-white/5 transition-colors`}>
-                  <span className="-rotate-45">{surah.number}</span>
-                </div>
-                <div>
-                  <h4 className="font-semibold text-lg">{surah.englishName}</h4>
-                  <p className="text-xs text-white/50">{surah.englishNameTranslation} • {surah.numberOfAyahs} Ayahs</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <span className={`font-arabic text-xl ${currentTheme.text} opacity-80`}>{surah.name}</span>
-              </div>
-            </GlassCard>
+              {f === 'all' ? 'All' : f === 'meccan' ? 'Meccan' : 'Medinan'}
+            </button>
           ))}
+          <span className="flex items-center ml-auto text-[11px] text-white/25">{filteredSurahs.length} results</span>
+        </div>
+
+        {/* Surah List */}
+        <div className="space-y-1.5">
+          {filteredSurahs.map((surah) => {
+            const isLastRead = user?.lastRead?.surah === surah.number;
+            return (
+              <div
+                key={surah.number}
+                onClick={() => handleSurahClick(surah.number)}
+                className={`group flex items-center gap-3.5 px-3.5 py-3 rounded-xl cursor-pointer transition-all active:scale-[0.98] ${
+                  isLastRead ? 'bg-white/[0.06] border border-white/[0.08]' : 'hover:bg-white/[0.04]'
+                }`}
+              >
+                {/* Number */}
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 text-[13px] font-bold ${
+                  isLastRead ? `bg-gradient-to-br ${currentTheme.gradient} text-black` : 'bg-white/[0.05] text-white/40'
+                }`}>
+                  {surah.number}
+                </div>
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-semibold text-[15px] text-white truncate">{surah.englishName}</h4>
+                    {isLastRead && (
+                      <span className={`text-[8px] ${currentTheme.text} font-bold uppercase tracking-widest shrink-0`}>Reading</span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-white/30 mt-0.5">
+                    {surah.englishNameTranslation} · {surah.numberOfAyahs} Ayahs · {surah.revelationType}
+                  </p>
+                </div>
+
+                {/* Arabic name */}
+                <span className="font-arabic text-lg text-white/20 group-hover:text-white/35 transition-colors shrink-0">
+                  {surah.name}
+                </span>
+              </div>
+            );
+          })}
 
           {filteredSurahs.length === 0 && (
-            <div className="text-center py-10 text-white/40">
-              <p>No Surahs found.</p>
+            <div className="text-center py-16">
+              <Search size={32} className="mx-auto text-white/10 mb-3" />
+              <p className="text-white/30 text-sm">No surahs found</p>
+              <button onClick={() => { setSearchTerm(''); setFilterType('all'); }} className={`mt-3 text-xs ${currentTheme.text} hover:underline`}>Clear filters</button>
             </div>
           )}
         </div>
@@ -1482,6 +1930,19 @@ export default function App() {
   const SettingsView = () => {
     const [isEditingName, setIsEditingName] = useState(false);
     const [tempName, setTempName] = useState(user?.name || '');
+    const [reciterOpen, setReciterOpen] = useState(false);
+    const reciterDropdownRef = useRef<HTMLDivElement>(null);
+
+    // Close dropdown on outside click
+    useEffect(() => {
+      const handleClickOutside = (e: MouseEvent) => {
+        if (reciterDropdownRef.current && !reciterDropdownRef.current.contains(e.target as Node)) {
+          setReciterOpen(false);
+        }
+      };
+      if (reciterOpen) document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [reciterOpen]);
 
     const handleSaveName = () => {
       if (!user) return;
@@ -1492,73 +1953,68 @@ export default function App() {
     };
 
     return (
-      <div className="min-h-[100dvh] pt-12 px-4 pb-32 animate-fade-in relative">
-        <h2 className="text-3xl font-bold mb-6">Settings</h2>
+      <div className="min-h-[100dvh] pt-12 px-5 pb-32 animate-fade-in relative">
+        {/* Header */}
+        <div className="flex items-center gap-3 mb-6">
+          <button onClick={goBack} className="p-1.5 hover:bg-white/10 rounded-full text-white/50">
+            <ChevronLeft size={20} />
+          </button>
+          <h2 className="text-xl font-bold text-white">Settings</h2>
+        </div>
 
         <div className="space-y-6">
-          {/* Profile Section */}
-          <section>
-            <h3 className="text-sm font-semibold text-white/40 uppercase tracking-widest mb-3 ml-1">Profile</h3>
-            <GlassCard className="p-5 flex items-center justify-between">
-              <div className="flex items-center gap-3 w-full">
-                <div className={`w-10 h-10 rounded-full ${currentTheme.bg} flex items-center justify-center font-bold text-xl shrink-0`}>
-                  {user?.name?.[0] || 'G'}
-                </div>
-                <div className="flex-1">
-                  <label className="text-xs text-white/40 block">Display Name</label>
-                  <p className="text-white font-medium text-lg">{user?.name || 'Guest'}</p>
-                </div>
-              </div>
 
-              <button onClick={() => { setTempName(user?.name || ''); setIsEditingName(true); }} className="p-2 hover:bg-white/10 rounded-full text-white/40 hover:text-white">
-                <PenLine size={20} />
-              </button>
-            </GlassCard>
+          {/* Profile */}
+          <section>
+            <p className="text-[10px] font-bold text-white/25 uppercase tracking-[0.15em] mb-2.5 ml-1">Profile</p>
+            <div
+              onClick={() => { setTempName(user?.name || ''); setIsEditingName(true); }}
+              className="flex items-center gap-3.5 p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.05] cursor-pointer hover:bg-white/[0.06] transition-colors"
+            >
+              <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${currentTheme.gradient} flex items-center justify-center font-bold text-sm text-black shrink-0`}>
+                {user?.name?.[0] || 'G'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-white font-semibold text-[15px] truncate">{user?.name || 'Guest'}</p>
+                <p className="text-white/25 text-[11px]">Tap to edit</p>
+              </div>
+              <PenLine size={14} className="text-white/20 shrink-0" />
+            </div>
           </section>
 
-          {/* Name Edit Modal Overlay */}
+          {/* Name Edit Modal */}
           {isEditingName && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-              <div className="w-full max-w-sm bg-zinc-900 border border-white/10 rounded-2xl p-6 shadow-2xl transform transition-all scale-100">
-                <h3 className="text-xl font-bold mb-4">Edit Name</h3>
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-5 bg-black/80 backdrop-blur-sm animate-fade-in">
+              <div className="w-full max-w-sm bg-zinc-900/95 border border-white/10 rounded-2xl p-5 shadow-2xl">
+                <h3 className="text-lg font-bold mb-4">Edit Name</h3>
                 <input
                   type="text"
                   value={tempName}
                   onChange={(e) => setTempName(e.target.value)}
-                  className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white placeholder-white/20 focus:outline-none focus:border-white/40 mb-6"
+                  className="w-full bg-black/40 border border-white/10 rounded-xl p-3.5 text-white text-sm placeholder-white/20 focus:outline-none focus:border-white/30 mb-4"
                   placeholder="Enter your name"
                   autoFocus
                 />
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => setIsEditingName(false)}
-                    className="flex-1 py-3 rounded-xl font-medium text-white/60 hover:bg-white/5 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSaveName}
-                    className={`flex-1 py-3 rounded-xl font-medium text-black ${currentTheme.bg} hover:opacity-90 transition-opacity`}
-                  >
-                    Save
-                  </button>
+                <div className="flex gap-2.5">
+                  <button onClick={() => setIsEditingName(false)} className="flex-1 py-2.5 rounded-xl text-sm font-medium text-white/50 hover:bg-white/5 transition-colors">Cancel</button>
+                  <button onClick={handleSaveName} className={`flex-1 py-2.5 rounded-xl text-sm font-medium text-black ${currentTheme.bg} hover:opacity-90 transition-opacity`}>Save</button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Appearance Section */}
+          {/* Appearance */}
           <section>
-            <h3 className="text-sm font-semibold text-white/40 uppercase tracking-widest mb-3 ml-1">Appearance</h3>
+            <p className="text-[10px] font-bold text-white/25 uppercase tracking-[0.15em] mb-2.5 ml-1">Appearance</p>
+            <div className="rounded-xl bg-white/[0.03] border border-white/[0.05] divide-y divide-white/[0.04]">
 
-            <GlassCard className="p-5 space-y-6">
-              {/* Theme Colors */}
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <Palette size={18} className={currentTheme.text} />
-                  <span className="font-medium">Accent Color</span>
+              {/* Accent Color */}
+              <div className="p-3.5">
+                <div className="flex items-center gap-2.5 mb-3">
+                  <Palette size={15} className={currentTheme.text} />
+                  <span className="text-[13px] font-medium text-white/70">Accent Color</span>
                 </div>
-                <div className="flex gap-3 overflow-x-auto no-scrollbar py-1">
+                <div className="flex gap-2.5">
                   {(Object.keys(THEMES) as Array<keyof typeof THEMES>).map((themeKey) => (
                     <button
                       key={themeKey}
@@ -1567,20 +2023,20 @@ export default function App() {
                         setSettings(newSettings);
                         localStorage.setItem('noor_settings', JSON.stringify(newSettings));
                       }}
-                      className={`w-10 h-10 rounded-full ${THEMES[themeKey].bg} border-2 transition-all ${settings.accentColor === themeKey ? 'border-white scale-110' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                      className={`w-8 h-8 rounded-full ${THEMES[themeKey].bg} transition-all ${settings.accentColor === themeKey ? 'ring-2 ring-white ring-offset-2 ring-offset-black scale-110' : 'opacity-50 hover:opacity-80'}`}
                     />
                   ))}
                 </div>
               </div>
 
               {/* Font Size */}
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <Type size={18} className={currentTheme.text} />
-                  <span className="font-medium">Font Size</span>
+              <div className="p-3.5">
+                <div className="flex items-center gap-2.5 mb-3">
+                  <Type size={15} className={currentTheme.text} />
+                  <span className="text-[13px] font-medium text-white/70">Font Size</span>
                 </div>
-                <div className="flex bg-black/30 p-1 rounded-xl">
-                  {['small', 'medium', 'large', 'xl'].map((size) => (
+                <div className="flex bg-black/30 p-0.5 rounded-lg">
+                  {(['small', 'medium', 'large', 'xl'] as const).map((size) => (
                     <button
                       key={size}
                       onClick={() => {
@@ -1588,128 +2044,212 @@ export default function App() {
                         setSettings(newSettings);
                         localStorage.setItem('noor_settings', JSON.stringify(newSettings));
                       }}
-                      className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${settings.fontSize === size ? 'bg-white/20 text-white' : 'text-white/40 hover:text-white/70'}`}
+                      className={`flex-1 py-2 rounded-md text-[11px] font-semibold uppercase tracking-wider transition-all ${settings.fontSize === size ? `bg-gradient-to-r ${currentTheme.gradient} text-black` : 'text-white/30 hover:text-white/50'}`}
                     >
-                      {size === 'small' ? 'Aa' : size === 'medium' ? 'Aa' : size === 'large' ? 'Aa' : 'Aa'}
-                      <span className="text-[10px] block opacity-50 capitalize">{size}</span>
+                      {size}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Font Family */}
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <Type size={18} className={currentTheme.text} />
-                  <span className="font-medium">Arabic Font Style</span>
+              {/* Arabic Font */}
+              <div className="p-3.5">
+                <div className="flex items-center gap-2.5 mb-3">
+                  <Type size={15} className={currentTheme.text} />
+                  <span className="text-[13px] font-medium text-white/70">Arabic Font</span>
                 </div>
                 <div className="flex gap-2">
-                  <button
-                    onClick={() => setSettings(s => ({ ...s, fontFamily: 'Amiri' }))}
-                    className={`flex-1 py-3 border border-white/10 rounded-xl font-arabic text-xl ${settings.fontFamily === 'Amiri' ? `${currentTheme.bg} text-white` : 'bg-black/20 text-white/60'}`}
-                  >
-                    الأميري
-                  </button>
-                  <button
-                    onClick={() => setSettings(s => ({ ...s, fontFamily: 'Lateef' }))}
-                    className={`flex-1 py-3 border border-white/10 rounded-xl font-quran text-xl ${settings.fontFamily === 'Lateef' ? `${currentTheme.bg} text-white` : 'bg-black/20 text-white/60'}`}
-                  >
-                    لطيف
-                  </button>
+                  {([{ key: 'Amiri', label: 'الأميري', cls: 'font-arabic' }, { key: 'Lateef', label: 'لطيف', cls: 'font-quran' }] as const).map(f => (
+                    <button
+                      key={f.key}
+                      onClick={() => setSettings(s => ({ ...s, fontFamily: f.key }))}
+                      className={`flex-1 py-2.5 rounded-lg border text-lg transition-all ${
+                        settings.fontFamily === f.key
+                          ? `border-white/20 bg-white/[0.06] text-white ${f.cls}`
+                          : `border-white/[0.05] text-white/30 ${f.cls} hover:text-white/50`
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
                 </div>
               </div>
-            </GlassCard>
-          </section>
-
-          {/* Reading Preferences */}
-          <section>
-            <h3 className="text-sm font-semibold text-white/40 uppercase tracking-widest mb-3 ml-1">Reading</h3>
-            <div className="space-y-3">
-              <GlassCard className="p-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <BookOpen size={20} className={currentTheme.text} />
-                  <span>Show Translation</span>
-                </div>
-                <button
-                  onClick={() => setSettings(s => ({ ...s, showTranslation: !s.showTranslation }))}
-                  className={`w-12 h-6 rounded-full relative transition-colors ${settings.showTranslation ? currentTheme.bg : 'bg-white/20'}`}
-                >
-                  <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${settings.showTranslation ? 'left-7' : 'left-1'}`}></div>
-                </button>
-              </GlassCard>
-
-              <GlassCard className="p-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className={`${currentTheme.text} text-sm font-bold border ${currentTheme.border} rounded px-1`}>Abc</span>
-                  <span>Show Transliteration</span>
-                </div>
-                <button
-                  onClick={() => setSettings(s => ({ ...s, showTransliteration: !s.showTransliteration }))}
-                  className={`w-12 h-6 rounded-full relative transition-colors ${settings.showTransliteration ? currentTheme.bg : 'bg-white/20'}`}
-                >
-                  <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${settings.showTransliteration ? 'left-7' : 'left-1'}`}></div>
-                </button>
-              </GlassCard>
             </div>
           </section>
 
-          {/* Goal Management */}
+          {/* Reciter */}
           <section>
-            <h3 className="text-sm font-semibold text-white/40 uppercase tracking-widest mb-3 ml-1">Goals</h3>
-            <GlassCard onClick={() => navigateTo('ramadanSetup')} className="p-4 flex items-center justify-between cursor-pointer hover:bg-white/10">
-              <div className="flex items-center gap-3">
-                <Target size={20} className={currentTheme.text} />
-                <span>Reset Ramadan Goal</span>
+            <p className="text-[10px] font-bold text-white/25 uppercase tracking-[0.15em] mb-2.5 ml-1">Reciter</p>
+            <div className="rounded-xl bg-white/[0.03] border border-white/[0.05] overflow-hidden" ref={reciterDropdownRef}>
+              <button
+                onClick={() => setReciterOpen(prev => !prev)}
+                className="w-full flex items-center justify-between gap-3 p-3.5"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <Mic size={15} className={currentTheme.text} />
+                  <span className="text-[14px] font-medium text-white truncate">
+                    {RECITERS.find(r => r.id === settings.reciter)?.name || 'Select Reciter'}
+                  </span>
+                </div>
+                <ChevronDown size={15} className={`text-white/30 transition-transform duration-300 shrink-0 ${reciterOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              <div className={`transition-all duration-300 ease-in-out overflow-y-auto ${reciterOpen ? 'max-h-[280px] opacity-100' : 'max-h-0 opacity-0'}`}>
+                <div className="border-t border-white/[0.04] px-1 py-1">
+                  {RECITERS.map((r) => (
+                    <button
+                      key={r.id}
+                      onClick={() => {
+                        if (settings.reciter !== r.id) {
+                          const newSettings = { ...settings, reciter: r.id };
+                          setSettings(newSettings);
+                          localStorage.setItem('noor_settings', JSON.stringify(newSettings));
+                          clearSurahDetailsCache();
+                          if (activeSurah) {
+                            fetchSurahDetails(activeSurah.number, r.id).then(details => {
+                              if (details) setActiveSurah(details);
+                            });
+                          }
+                          if (isPlaying) {
+                            audioRef.current.pause();
+                            setIsPlaying(false);
+                            setCurrentAudioIndex(-1);
+                            setAudioQueue([]);
+                          }
+                        }
+                        setReciterOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 rounded-lg flex items-center gap-2.5 text-[13px] transition-colors ${
+                        settings.reciter === r.id
+                          ? `${currentTheme.text} bg-white/[0.05]`
+                          : 'text-white/50 hover:bg-white/[0.04] hover:text-white/70'
+                      }`}
+                    >
+                      <span className="flex-1">{r.name}</span>
+                      {settings.reciter === r.id && <CheckCircle2 size={13} className={currentTheme.text} />}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <ChevronLeft className="rotate-180 opacity-50" size={16} />
-            </GlassCard>
+            </div>
           </section>
+
+          {/* Reading */}
+          <section>
+            <p className="text-[10px] font-bold text-white/25 uppercase tracking-[0.15em] mb-2.5 ml-1">Reading</p>
+            <div className="rounded-xl bg-white/[0.03] border border-white/[0.05] divide-y divide-white/[0.04]">
+              {/* Translation toggle */}
+              <div className="flex items-center justify-between p-3.5">
+                <div className="flex items-center gap-2.5">
+                  <BookOpen size={15} className={currentTheme.text} />
+                  <span className="text-[13px] font-medium text-white/70">Translation</span>
+                </div>
+                <button
+                  onClick={() => setSettings(s => ({ ...s, showTranslation: !s.showTranslation }))}
+                  className={`w-10 h-[22px] rounded-full relative transition-colors ${settings.showTranslation ? currentTheme.bg : 'bg-white/15'}`}
+                >
+                  <div className={`absolute top-[3px] w-4 h-4 rounded-full bg-white transition-all ${settings.showTranslation ? 'left-[22px]' : 'left-[3px]'}`}></div>
+                </button>
+              </div>
+
+              {/* Transliteration toggle */}
+              <div className="flex items-center justify-between p-3.5">
+                <div className="flex items-center gap-2.5">
+                  <span className={`text-[10px] font-bold ${currentTheme.text} border ${currentTheme.border} rounded px-1 py-0.5 leading-none`}>Abc</span>
+                  <span className="text-[13px] font-medium text-white/70">Transliteration</span>
+                </div>
+                <button
+                  onClick={() => setSettings(s => ({ ...s, showTransliteration: !s.showTransliteration }))}
+                  className={`w-10 h-[22px] rounded-full relative transition-colors ${settings.showTransliteration ? currentTheme.bg : 'bg-white/15'}`}
+                >
+                  <div className={`absolute top-[3px] w-4 h-4 rounded-full bg-white transition-all ${settings.showTransliteration ? 'left-[22px]' : 'left-[3px]'}`}></div>
+                </button>
+              </div>
+            </div>
+          </section>
+
+          {/* Goals */}
+          <section>
+            <p className="text-[10px] font-bold text-white/25 uppercase tracking-[0.15em] mb-2.5 ml-1">Goals</p>
+            <div
+              onClick={() => navigateTo('ramadanSetup')}
+              className="flex items-center justify-between p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.05] cursor-pointer hover:bg-white/[0.06] transition-colors"
+            >
+              <div className="flex items-center gap-2.5">
+                <Target size={15} className={currentTheme.text} />
+                <span className="text-[13px] font-medium text-white/70">Reading Goal</span>
+              </div>
+              <ChevronRight size={14} className="text-white/20" />
+            </div>
+          </section>
+
         </div>
       </div>
     );
   };
 
   const BookmarksView = () => (
-    <div className="min-h-[100dvh] pt-12 px-4 pb-32 animate-fade-in">
-      <h2 className="text-3xl font-bold mb-6">Bookmarks</h2>
+    <div className="min-h-[100dvh] pt-12 px-5 pb-32 animate-fade-in">
+      {/* Header + streak/profile */}
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h2 className="text-2xl font-bold text-white">Bookmarks</h2>
+          <p className="text-white/30 text-xs mt-0.5">{user?.bookmarks.length || 0} saved ayahs</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {user?.streak && user.streak > 0 ? (
+            <div className="flex items-center gap-1 px-2.5 py-1 rounded-full cursor-pointer hover:bg-white/10 transition-colors" style={{background: 'rgba(255,255,255,0.05)'}}>
+              <Flame size={11} className={currentTheme.text} fill="currentColor" />
+              <span className={`text-[11px] font-bold ${currentTheme.text}`}>{user.streak}</span>
+            </div>
+          ) : null}
+          <div
+            onClick={() => navigateTo('settings')}
+            className="w-9 h-9 rounded-full bg-white/[0.06] border border-white/[0.08] flex items-center justify-center cursor-pointer hover:bg-white/10 transition-colors"
+          >
+            <span className="font-semibold text-sm text-white/70">{user?.name?.charAt(0)}</span>
+          </div>
+        </div>
+      </div>
+
       {user?.bookmarks.length === 0 ? (
-        <div className="text-center py-20 text-white/40">
-          <Bookmark size={48} className="mx-auto mb-4 opacity-50" />
-          <p>No bookmarks yet.</p>
+        <div className="flex flex-col items-center justify-center py-24">
+          <div className="w-16 h-16 rounded-2xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center mb-4">
+            <Bookmark size={24} className="text-white/15" />
+          </div>
+          <p className="text-white/30 text-sm font-medium mb-1">No bookmarks yet</p>
+          <p className="text-white/15 text-xs">Tap the bookmark icon on any ayah to save it</p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-2">
           {user?.bookmarks.map((bookmark) => (
-            <GlassCard
+            <div
               key={bookmark.id}
-              className={`p-5 group border-l-4 ${currentTheme.border}`}
               onClick={() => handleBookmarkClick(bookmark)}
+              className="group flex gap-3.5 p-3.5 rounded-xl cursor-pointer hover:bg-white/[0.04] active:scale-[0.98] transition-all"
             >
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex items-center gap-3">
-                  <div className={`w-12 h-12 ${currentTheme.bg} bg-opacity-10 rounded-full flex items-center justify-center border ${currentTheme.border} border-opacity-20`}>
-                    <span className={`${currentTheme.text} font-bold text-sm`}>{bookmark.surahNumber}:{bookmark.ayahNumber}</span>
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-xl">{bookmark.surahName}</h4>
-                    <div className="flex items-center gap-2 text-xs text-white/40">
-                      <span className="bg-white/10 px-2 py-0.5 rounded text-[10px] uppercase tracking-wider">Ayah {bookmark.ayahNumber}</span>
-                      <span>•</span>
-                      <span>{new Date(bookmark.timestamp).toLocaleDateString()}</span>
-                    </div>
-                  </div>
-                </div>
-                <div className={`bg-white/5 p-2 rounded-full group-hover:${currentTheme.bg} group-hover:text-white transition-colors`}>
-                  <ArrowRight size={16} />
-                </div>
+              {/* Surah number badge */}
+              <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${currentTheme.gradient} flex items-center justify-center shrink-0 mt-0.5`}>
+                <span className="text-black text-[11px] font-bold">{bookmark.surahNumber}</span>
               </div>
 
-              <div className="bg-black/20 rounded-xl p-4 border border-white/5">
-                <p className="font-quran text-right text-2xl truncate text-white/90 leading-relaxed">
+              {/* Content */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <h4 className="font-semibold text-[15px] text-white">{bookmark.surahName}</h4>
+                  <span className="text-white/20 text-[11px]">Ayah {bookmark.ayahNumber}</span>
+                </div>
+                <p className="font-quran text-right text-[16px] text-white/50 leading-relaxed truncate" dir="rtl">
                   {bookmark.textPreview}
                 </p>
+                <p className="text-[10px] text-white/20 mt-1.5">
+                  {new Date(bookmark.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </p>
               </div>
-            </GlassCard>
+
+              {/* Arrow */}
+              <ChevronRight size={14} className="text-white/15 shrink-0 mt-3 group-hover:text-white/30 transition-colors" />
+            </div>
           ))}
         </div>
       )}
@@ -1776,9 +2316,13 @@ export default function App() {
           isPlaying={isPlaying}
           currentAyah={audioQueue[currentAudioIndex] || null}
           currentSurahName={playingSurahName}
+          surahNumber={playingSurahNumber}
+          totalAyahs={audioQueue.length}
           onPlayPause={() => setIsPlaying(!isPlaying)}
           onNext={handleNextTrack}
           onPrev={handlePrevTrack}
+          onNextSurah={playingSurahNumber < 114 ? handleNextSurah : null}
+          onPrevSurah={playingSurahNumber > 1 ? handlePrevSurah : null}
           onClose={closePlayer}
           playbackSpeed={playbackSpeed}
           onSpeedChange={cyclePlaybackSpeed}
