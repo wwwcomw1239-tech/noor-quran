@@ -1,4 +1,15 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { initAnalytics, trackPWAInstall, trackPWALaunch } from './utils/analytics';
+
+// Initialize Analytics
+initAnalytics();
+
+
+
+
+
+
+
 import {
   BookOpen,
   Settings,
@@ -186,7 +197,7 @@ const SurahView: React.FC<SurahViewProps> = ({
           if (!prev) return prev;
           const updated = { ...prev, lastRead: lr };
           // Also persist to localStorage so it survives page reloads
-          try { localStorage.setItem('noor_user', JSON.stringify(updated)); } catch(e) {}
+          try { localStorage.setItem('noor_user', JSON.stringify(updated)); } catch (e) { }
           return updated;
         });
       }
@@ -510,6 +521,16 @@ export default function App() {
 
   // Initialize
   useEffect(() => {
+    // PWA Tracking
+    const handleAppInstalled = () => {
+      trackPWAInstall();
+    };
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      trackPWALaunch();
+    }
+
     // Load local storage
     const storedUser = localStorage.getItem('noor_user');
     const storedSettings = localStorage.getItem('noor_settings');
@@ -720,7 +741,7 @@ export default function App() {
     // Read latest user from localStorage to avoid clobbering lastRead
     const currentUserStr = localStorage.getItem('noor_user');
     if (!currentUserStr) return;
-    
+
     const currentUser: UserProfile = JSON.parse(currentUserStr);
     if (!currentUser.ramadanGoal || !currentUser.ramadanGoal.isActive) return;
 
