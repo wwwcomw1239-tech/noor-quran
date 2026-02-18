@@ -502,6 +502,8 @@ const CongratsModal = ({
 
 // --- Audio Player Component ---
 
+const PLAYBACK_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
 const AudioPlayerBar = ({
   isPlaying,
   currentAyah,
@@ -510,6 +512,8 @@ const AudioPlayerBar = ({
   onNext,
   onPrev,
   onClose,
+  playbackSpeed,
+  onSpeedChange,
   theme
 }: {
   isPlaying: boolean,
@@ -519,13 +523,15 @@ const AudioPlayerBar = ({
   onNext: () => void,
   onPrev: () => void,
   onClose: () => void,
+  playbackSpeed: number,
+  onSpeedChange: () => void,
   theme: any
 }) => {
   if (!currentAyah) return null;
 
   return (
     <div className="fixed bottom-32 left-4 right-4 max-w-sm mx-auto z-40 animate-fade-in">
-      <div className="bg-black/80 backdrop-blur-xl border border-white/10 rounded-3xl p-4 shadow-2xl flex items-center gap-4 relative overflow-hidden ring-1 ring-white/5">
+      <div className="bg-black/80 backdrop-blur-xl border border-white/10 rounded-3xl p-4 shadow-2xl flex items-center gap-3 relative overflow-hidden ring-1 ring-white/5">
         {/* Glow behind */}
         <div className={`absolute -inset-1 ${theme.bg} opacity-20 blur-xl`}></div>
 
@@ -537,6 +543,14 @@ const AudioPlayerBar = ({
           <h4 className="font-bold text-sm truncate text-white">{currentSurahName}</h4>
           <p className="text-xs text-white/50 truncate font-medium">Ayah {currentAyah.numberInSurah}</p>
         </div>
+
+        {/* Speed Button */}
+        <button
+          onClick={onSpeedChange}
+          className={`relative z-10 px-2 py-1 rounded-lg text-[11px] font-bold border border-white/10 hover:border-white/20 transition-colors min-w-[40px] text-center ${playbackSpeed !== 1 ? `${theme.text} ${theme.border}` : 'text-white/50'}`}
+        >
+          {playbackSpeed}x
+        </button>
 
         {/* Controls */}
         <div className="flex items-center gap-4 relative z-10">
@@ -583,6 +597,7 @@ export default function App() {
   const [playingSurahName, setPlayingSurahName] = useState<string>('');
   const [currentAudioIndex, setCurrentAudioIndex] = useState<number>(-1);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const [scrollToAyah, setScrollToAyah] = useState<number | null>(null); // Number In Surah
@@ -725,6 +740,8 @@ export default function App() {
           audioRef.current.load();
         }
 
+        audioRef.current.playbackRate = playbackSpeed;
+
         const playPromise = audioRef.current.play();
         if (playPromise !== undefined) {
           playPromise
@@ -747,7 +764,14 @@ export default function App() {
         setIsPlaying(false);
       }
     }
-  }, [currentAudioIndex, audioQueue]);
+  }, [currentAudioIndex, audioQueue, playbackSpeed]);
+
+  // Sync playback speed to audio element when speed changes
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.playbackRate = playbackSpeed;
+    }
+  }, [playbackSpeed]);
 
   useEffect(() => {
     if (audioRef.current) {
@@ -777,6 +801,13 @@ export default function App() {
     if (currentAudioIndex > 0) {
       setCurrentAudioIndex(prev => prev - 1);
     }
+  };
+
+  const cyclePlaybackSpeed = () => {
+    setPlaybackSpeed(prev => {
+      const idx = PLAYBACK_SPEEDS.indexOf(prev);
+      return PLAYBACK_SPEEDS[(idx + 1) % PLAYBACK_SPEEDS.length];
+    });
   };
 
   const closePlayer = () => {
@@ -1727,6 +1758,8 @@ export default function App() {
           onNext={handleNextTrack}
           onPrev={handlePrevTrack}
           onClose={closePlayer}
+          playbackSpeed={playbackSpeed}
+          onSpeedChange={cyclePlaybackSpeed}
           theme={currentTheme}
         />
       )}
