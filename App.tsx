@@ -598,7 +598,9 @@ export default function App() {
   const [currentAudioIndex, setCurrentAudioIndex] = useState<number>(-1);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement>(new Audio());
+  // Track whether playback was initiated by a user gesture (for PWA autoplay policy)
+  const userGesturePlayRef = useRef(false);
 
   const [scrollToAyah, setScrollToAyah] = useState<number | null>(null); // Number In Surah
   const [todaysDua, setTodaysDua] = useState(DAILY_DUAS[0]);
@@ -727,67 +729,87 @@ export default function App() {
 
   // --- Audio Logic ---
 
+  // Helper to load and play a specific ayah on the audio element
+  const playAudioForAyah = useCallback((ayah: Ayah) => {
+    const audio = audioRef.current;
+    if (!ayah.audio) return;
+
+    if (audio.src !== ayah.audio) {
+      audio.src = ayah.audio;
+      audio.load();
+    }
+    audio.playbackRate = playbackSpeed;
+    audio.play()
+      .then(() => setIsPlaying(true))
+      .catch(e => console.error("Audio play error", e));
+  }, [playbackSpeed]);
+
+  // When track index changes (e.g. auto-advance on ended, next/prev),
+  // play the new track — allowed because playback was already user-initiated.
   useEffect(() => {
     if (currentAudioIndex >= 0 && currentAudioIndex < audioQueue.length) {
-      const ayah = audioQueue[currentAudioIndex];
-      if (ayah.audio) {
-        if (!audioRef.current) {
-          audioRef.current = new Audio();
-        }
-
-        if (audioRef.current.src !== ayah.audio) {
-          audioRef.current.src = ayah.audio;
-          audioRef.current.load();
-        }
-
-        audioRef.current.playbackRate = playbackSpeed;
-
-        const playPromise = audioRef.current.play();
-        if (playPromise !== undefined) {
-          playPromise
-            .then(() => setIsPlaying(true))
-            .catch(e => console.error("Audio play error", e));
-        }
-
-        audioRef.current.onended = () => {
-          if (currentAudioIndex < audioQueue.length - 1) {
-            setCurrentAudioIndex(prev => prev + 1);
-          } else {
-            setIsPlaying(false);
-            setCurrentAudioIndex(-1);
-          }
-        };
+      // Skip if the initial play was already handled by playSurah directly
+      if (userGesturePlayRef.current) {
+        userGesturePlayRef.current = false;
+        return;
       }
+      playAudioForAyah(audioQueue[currentAudioIndex]);
     } else {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        setIsPlaying(false);
-      }
+      audioRef.current.pause();
+      setIsPlaying(false);
     }
-  }, [currentAudioIndex, audioQueue, playbackSpeed]);
+  }, [currentAudioIndex, audioQueue, playAudioForAyah]);
 
   // Sync playback speed to audio element when speed changes
   useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.playbackRate = playbackSpeed;
-    }
+    audioRef.current.playbackRate = playbackSpeed;
   }, [playbackSpeed]);
 
   useEffect(() => {
-    if (audioRef.current) {
-      if (isPlaying && audioRef.current.paused) {
-        audioRef.current.play().catch(e => console.error(e));
-      } else if (!isPlaying && !audioRef.current.paused) {
-        audioRef.current.pause();
-      }
+    const audio = audioRef.current;
+    if (isPlaying && audio.paused && currentAudioIndex >= 0) {
+      audio.play().catch(e => console.error(e));
+    } else if (!isPlaying && !audio.paused) {
+      audio.pause();
     }
   }, [isPlaying]);
 
+  // Setup onended handler (uses ref to always read latest state)
+  const currentAudioIndexRef = useRef(currentAudioIndex);
+  currentAudioIndexRef.current = currentAudioIndex;
+  const audioQueueRef = useRef(audioQueue);
+  audioQueueRef.current = audioQueue;
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    audio.onended = () => {
+      const idx = currentAudioIndexRef.current;
+      const queue = audioQueueRef.current;
+      if (idx < queue.length - 1) {
+        setCurrentAudioIndex(idx + 1);
+      } else {
+        setIsPlaying(false);
+        setCurrentAudioIndex(-1);
+      }
+    };
+  }, []);
+
   const playSurah = (surahDetails: SurahDetails, startIndex: number = 0) => {
+    // Play directly from user gesture to satisfy PWA autoplay policy
+    const ayah = surahDetails.ayahs[startIndex];
+    if (ayah?.audio) {
+      const audio = audioRef.current;
+      audio.src = ayah.audio;
+      audio.load();
+      audio.playbackRate = playbackSpeed;
+      audio.play()
+        .then(() => setIsPlaying(true))
+        .catch(e => console.error("Audio play error", e));
+    }
     setPlayingSurahName(surahDetails.englishName);
     setAudioQueue(surahDetails.ayahs);
+    userGesturePlayRef.current = true; // prevent effect from double-playing
     setCurrentAudioIndex(startIndex);
-    setIsPlaying(true);
     trackAudioPlayed(surahDetails.englishName, surahDetails.number, startIndex);
   };
 
@@ -813,7 +835,7 @@ export default function App() {
   const closePlayer = () => {
     setIsPlaying(false);
     setCurrentAudioIndex(-1);
-    if (audioRef.current) audioRef.current.pause();
+    audioRef.current.pause();
   };
 
   // ---
