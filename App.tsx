@@ -592,6 +592,7 @@ export default function App() {
   const viewHistoryRef = useRef<ViewState[]>([]);
   const scrollPositionsRef = useRef<Record<string, number>>({});
   const isRestoringScrollRef = useRef(false);
+  const [navKey, setNavKey] = useState(0); // incremented to force scroll reset on same-view navigations
 
   const navigateTo = useCallback((newView: ViewState) => {
     // Save current scroll position before leaving
@@ -604,6 +605,7 @@ export default function App() {
     }
     trackPageview(newView);
     setView(newView);
+    setNavKey(k => k + 1);
   }, [view]);
 
   const goBack = useCallback(() => {
@@ -706,7 +708,7 @@ export default function App() {
     } else {
       window.scrollTo(0, 0);
     }
-  }, [view]);
+  }, [view, navKey]);
 
   // --- Audio Logic ---
 
