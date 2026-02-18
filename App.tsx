@@ -36,6 +36,7 @@ import {
   PartyPopper,
   SkipBack,
   SkipForward,
+  ChevronRight,
   MoreVertical,
   Star,
   MapPin,
@@ -69,6 +70,10 @@ interface SurahViewProps {
   currentAudioIndex: number;
   isPlaying: boolean;
   setView: (v: ViewState) => void;
+  onNextSurah: (() => void) | null;
+  nextSurahName: string | null;
+  onPrevSurah: (() => void) | null;
+  prevSurahName: string | null;
 }
 
 const SurahView: React.FC<SurahViewProps> = ({
@@ -86,6 +91,10 @@ const SurahView: React.FC<SurahViewProps> = ({
   currentAudioIndex,
   isPlaying,
   setView,
+  onNextSurah,
+  nextSurahName,
+  onPrevSurah,
+  prevSurahName,
 }) => {
   // State for Virtualization / Lazy Loading
   const initialCount = scrollToAyah ? Math.min(scrollToAyah + 20, activeSurah?.ayahs.length || 20) : 20;
@@ -177,8 +186,7 @@ const SurahView: React.FC<SurahViewProps> = ({
     };
 
     observer.current = new IntersectionObserver(handleIntersect, {
-      threshold: 0.6,
-      rootMargin: '-30% 0px -40% 0px'
+      threshold: 0.1
     });
 
     const ayahElements = document.querySelectorAll('.ayah-container');
@@ -186,6 +194,9 @@ const SurahView: React.FC<SurahViewProps> = ({
 
     return () => observer.current?.disconnect();
   }, [activeSurah, visibleCount]);
+
+  // End-of-surah ref (used for UI rendering only)
+  const endOfSurahRef = useRef<HTMLDivElement>(null);
 
   // Sync Ref to State + localStorage on Unmount
   useEffect(() => {
@@ -306,6 +317,52 @@ const SurahView: React.FC<SurahViewProps> = ({
         {visibleCount < activeSurah.ayahs.length && (
           <div ref={bottomSentinelRef} className="h-20 flex justify-center items-center">
             <LoadingSpinner colorClass="text-white/20" />
+          </div>
+        )}
+
+        {/* End of Surah + Navigation */}
+        {visibleCount >= activeSurah.ayahs.length && (
+          <div ref={endOfSurahRef} className="py-12 space-y-6">
+            {/* Completion indicator */}
+            <div className="flex flex-col items-center gap-3 opacity-60">
+              <CheckCircle2 size={28} className={currentTheme.text} />
+              <p className="text-sm text-white/50">End of {activeSurah.englishName}</p>
+            </div>
+
+            {/* Surah Navigation */}
+            <div className="flex gap-3">
+              {/* Previous Surah */}
+              {onPrevSurah && prevSurahName && (
+                <button
+                  onClick={onPrevSurah}
+                  className={`flex-1 py-5 px-5 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl flex items-center gap-3 group hover:border-opacity-30 hover:bg-white/10 transition-all duration-300 active:scale-[0.98]`}
+                >
+                  <div className={`w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center shrink-0 group-hover:${currentTheme.bg} group-hover:text-black group-hover:border-transparent transition-all duration-300`}>
+                    <ChevronLeft size={18} />
+                  </div>
+                  <div className="text-left min-w-0">
+                    <p className={`text-[10px] ${currentTheme.text} font-bold uppercase tracking-wider mb-0.5`}>Previous</p>
+                    <p className="text-sm font-bold text-white truncate">{prevSurahName}</p>
+                  </div>
+                </button>
+              )}
+
+              {/* Next Surah */}
+              {onNextSurah && nextSurahName && (
+                <button
+                  onClick={onNextSurah}
+                  className={`flex-1 py-5 px-5 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl flex items-center justify-between gap-3 group hover:border-opacity-30 hover:bg-white/10 transition-all duration-300 active:scale-[0.98]`}
+                >
+                  <div className="text-left min-w-0">
+                    <p className={`text-[10px] ${currentTheme.text} font-bold uppercase tracking-wider mb-0.5`}>Next</p>
+                    <p className="text-sm font-bold text-white truncate">{nextSurahName}</p>
+                  </div>
+                  <div className={`w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center shrink-0 group-hover:${currentTheme.bg} group-hover:text-black group-hover:border-transparent transition-all duration-300`}>
+                    <ChevronRight size={18} />
+                  </div>
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -1560,6 +1617,10 @@ export default function App() {
           currentAudioIndex={currentAudioIndex}
           isPlaying={isPlaying}
           setView={setView}
+          onNextSurah={activeSurah && activeSurah.number < 114 ? () => handleSurahClick(activeSurah.number + 1) : null}
+          nextSurahName={activeSurah ? surahs.find(s => s.number === activeSurah.number + 1)?.englishName || null : null}
+          onPrevSurah={activeSurah && activeSurah.number > 1 ? () => handleSurahClick(activeSurah.number - 1) : null}
+          prevSurahName={activeSurah ? surahs.find(s => s.number === activeSurah.number - 1)?.englishName || null : null}
         />}
         {view === 'settings' && <SettingsView />}
         {view === 'bookmarks' && <BookmarksView />}
