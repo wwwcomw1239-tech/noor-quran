@@ -70,6 +70,7 @@ interface SurahViewProps {
   currentAudioIndex: number;
   isPlaying: boolean;
   setView: (v: ViewState) => void;
+  goBack: () => void;
   onNextSurah: (() => void) | null;
   nextSurahName: string | null;
   onPrevSurah: (() => void) | null;
@@ -91,6 +92,7 @@ const SurahView: React.FC<SurahViewProps> = ({
   currentAudioIndex,
   isPlaying,
   setView,
+  goBack,
   onNextSurah,
   nextSurahName,
   onPrevSurah,
@@ -243,7 +245,7 @@ const SurahView: React.FC<SurahViewProps> = ({
     <div className="h-full overflow-y-auto pb-24 relative no-scrollbar">
       {/* Fixed Header */}
       <div className="fixed top-0 left-0 right-0 mx-auto w-full max-w-md h-20 bg-black/90 backdrop-blur-xl border-b border-white/5 z-50 flex items-center px-4 justify-between">
-        <button onClick={() => setView('surahList')} className="p-2 hover:bg-white/10 rounded-full">
+        <button onClick={goBack} className="p-2 hover:bg-white/10 rounded-full">
           <ChevronLeft />
         </button>
         <div className="text-center">
@@ -572,6 +574,31 @@ export default function App() {
 
   const [scrollToAyah, setScrollToAyah] = useState<number | null>(null); // Number In Surah
   const [todaysDua, setTodaysDua] = useState(DAILY_DUAS[0]);
+
+  // Navigation history & scroll position restoration
+  const viewHistoryRef = useRef<ViewState[]>([]);
+  const scrollPositionsRef = useRef<Record<string, number>>({});
+  const isRestoringScrollRef = useRef(false);
+
+  const navigateTo = useCallback((newView: ViewState) => {
+    // Save current scroll position before leaving
+    scrollPositionsRef.current[view] = window.scrollY;
+    // Push current view onto history stack (but not if navigating to surah from surah — prev/next)
+    if (view !== newView) {
+      if (!(view === 'surah' && newView === 'surah')) {
+        viewHistoryRef.current.push(view);
+      }
+    }
+    setView(newView);
+  }, [view]);
+
+  const goBack = useCallback(() => {
+    // Save current scroll position
+    scrollPositionsRef.current[view] = window.scrollY;
+    const prevView = viewHistoryRef.current.pop() || 'home';
+    isRestoringScrollRef.current = true;
+    setView(prevView);
+  }, [view]);
   const [showCongrats, setShowCongrats] = useState(false);
 
   const currentTheme = THEMES[settings.accentColor];
@@ -644,9 +671,19 @@ export default function App() {
     }
   };
 
-  // Scroll to top when view changes
+  // Scroll position management when view changes
   useEffect(() => {
-    window.scrollTo(0, 0);
+    if (isRestoringScrollRef.current) {
+      // Restore saved scroll position
+      const saved = scrollPositionsRef.current[view] || 0;
+      // Use rAF to ensure DOM has rendered
+      requestAnimationFrame(() => {
+        window.scrollTo(0, saved);
+      });
+      isRestoringScrollRef.current = false;
+    } else {
+      window.scrollTo(0, 0);
+    }
   }, [view]);
 
   // --- Audio Logic ---
@@ -756,7 +793,7 @@ export default function App() {
     }
     // Navigate immediately so the user sees the surah view (with loading spinner)
     setActiveSurah(null);
-    setView('surah');
+    navigateTo('surah');
     const details = await fetchSurahDetails(surahNumber);
     setActiveSurah(details);
   };
@@ -996,7 +1033,7 @@ export default function App() {
       const updatedUser = { ...user, ramadanGoal: newGoal };
       setUser(updatedUser);
       localStorage.setItem('noor_user', JSON.stringify(updatedUser));
-      setView('home');
+      goBack();
     };
 
     const dailyPages = Math.ceil((604 * khatams) / days);
@@ -1006,7 +1043,7 @@ export default function App() {
         <div className={`absolute top-0 right-0 p-32 ${currentTheme.bg} opacity-10 blur-[100px] rounded-full pointer-events-none`}></div>
 
         <div className="w-full max-w-md relative z-10">
-          <button onClick={() => setView('home')} className="mb-6 flex items-center text-white/50 hover:text-white transition-colors">
+          <button onClick={() => goBack()} className="mb-6 flex items-center text-white/50 hover:text-white transition-colors">
             <ChevronLeft size={20} /> <span className="ml-1">Cancel</span>
           </button>
 
@@ -1206,7 +1243,7 @@ export default function App() {
               </GlassCard>
             </div>
           ) : (
-            <GlassCard onClick={() => setView('ramadanSetup')} className={`p-8 flex flex-col items-center text-center gap-4 group border-dashed border-white/20 hover:${currentTheme.border} hover:border-opacity-50 transition-colors`}>
+            <GlassCard onClick={() => navigateTo('ramadanSetup')} className={`p-8 flex flex-col items-center text-center gap-4 group border-dashed border-white/20 hover:${currentTheme.border} hover:border-opacity-50 transition-colors`}>
               <div className={`w-16 h-16 rounded-full ${currentTheme.bg} bg-opacity-10 flex items-center justify-center group-hover:bg-opacity-20 transition-colors`}>
                 <MapPin size={32} className={currentTheme.text} />
               </div>
@@ -1522,7 +1559,7 @@ export default function App() {
           {/* Goal Management */}
           <section>
             <h3 className="text-sm font-semibold text-white/40 uppercase tracking-widest mb-3 ml-1">Goals</h3>
-            <GlassCard onClick={() => setView('ramadanSetup')} className="p-4 flex items-center justify-between cursor-pointer hover:bg-white/10">
+            <GlassCard onClick={() => navigateTo('ramadanSetup')} className="p-4 flex items-center justify-between cursor-pointer hover:bg-white/10">
               <div className="flex items-center gap-3">
                 <Target size={20} className={currentTheme.text} />
                 <span>Reset Ramadan Goal</span>
@@ -1616,7 +1653,8 @@ export default function App() {
           audioQueue={audioQueue}
           currentAudioIndex={currentAudioIndex}
           isPlaying={isPlaying}
-          setView={setView}
+          setView={navigateTo}
+          goBack={goBack}
           onNextSurah={activeSurah && activeSurah.number < 114 ? () => handleSurahClick(activeSurah.number + 1) : null}
           nextSurahName={activeSurah ? surahs.find(s => s.number === activeSurah.number + 1)?.englishName || null : null}
           onPrevSurah={activeSurah && activeSurah.number > 1 ? () => handleSurahClick(activeSurah.number - 1) : null}
@@ -1651,7 +1689,7 @@ export default function App() {
 
       {/* Bottom Navigation */}
       {view !== 'auth' && view !== 'surah' && view !== 'ramadanSetup' && view !== 'landing' && (
-        <Navigation active={view} setView={setView} theme={currentTheme} />
+        <Navigation active={view} setView={navigateTo} theme={currentTheme} />
       )}
 
     </div>
