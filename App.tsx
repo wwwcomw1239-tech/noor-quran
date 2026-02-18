@@ -1,5 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { initAnalytics, trackPWAInstall, trackPWALaunch } from './utils/analytics';
+import {
+  initAnalytics, trackPWAInstall, trackPWALaunch,
+  trackPageview, identifyUser, setUserProperties,
+  trackSurahOpened, trackAudioPlayed, trackBookmarkToggled,
+  trackUserSignup, trackGoalCreated, trackSurahNavigated,
+  trackDailyGoalCompleted, trackStreakUpdated
+} from './utils/analytics';
 
 // Initialize Analytics
 initAnalytics();
@@ -589,6 +595,7 @@ export default function App() {
         viewHistoryRef.current.push(view);
       }
     }
+    trackPageview(newView);
     setView(newView);
   }, [view]);
 
@@ -623,8 +630,14 @@ export default function App() {
     if (storedUser) {
       currentUser = JSON.parse(storedUser);
       setUser(currentUser);
-      // View is already set by lazy initializer, but just in case
-      // setView('home'); 
+      // Re-identify returning user for PostHog
+      if (currentUser?.name) {
+        identifyUser(currentUser.name.toLowerCase().replace(/\s+/g, '_'), {
+          name: currentUser.name,
+          gender: currentUser.gender,
+          streak: currentUser.streak,
+        });
+      }
     }
     if (storedSettings) setSettings(JSON.parse(storedSettings));
 
@@ -668,6 +681,7 @@ export default function App() {
       };
       setUser(updatedUser);
       localStorage.setItem('noor_user', JSON.stringify(updatedUser));
+      trackStreakUpdated(newStreak);
     }
   };
 
@@ -740,6 +754,7 @@ export default function App() {
     setAudioQueue(surahDetails.ayahs);
     setCurrentAudioIndex(startIndex);
     setIsPlaying(true);
+    trackAudioPlayed(surahDetails.englishName, surahDetails.number, startIndex);
   };
 
   const handleNextTrack = () => {
@@ -774,6 +789,11 @@ export default function App() {
     };
     setUser(newUser);
     localStorage.setItem('noor_user', JSON.stringify(newUser));
+    identifyUser(name.toLowerCase().replace(/\s+/g, '_') + '_' + Date.now(), {
+      name,
+      gender,
+    });
+    trackUserSignup(gender);
     setView('home');
   };
 
@@ -796,6 +816,9 @@ export default function App() {
     navigateTo('surah');
     const details = await fetchSurahDetails(surahNumber);
     setActiveSurah(details);
+    if (details) {
+      trackSurahOpened(surahNumber, details.englishName, ayah);
+    }
   };
 
   const handleBookmarkClick = async (bookmark: BookmarkType) => {
@@ -806,6 +829,12 @@ export default function App() {
     if (!user || !activeSurah) return;
 
     const isBookmarked = user.bookmarks.some(b => b.id === ayah.number);
+    trackBookmarkToggled(
+      isBookmarked ? 'removed' : 'added',
+      activeSurah.englishName,
+      activeSurah.number,
+      ayah.numberInSurah
+    );
     let newBookmarks: BookmarkType[];
 
     if (isBookmarked) {
@@ -855,6 +884,7 @@ export default function App() {
     if (pagesReadToday >= dailyTarget && goal.lastCongratulatedDate !== today) {
       updatedGoal.lastCongratulatedDate = today;
       setShowCongrats(true);
+      trackDailyGoalCompleted(pagesReadToday);
     }
 
     // Preserve lastRead from localStorage (not stale React state)
@@ -1033,6 +1063,7 @@ export default function App() {
       const updatedUser = { ...user, ramadanGoal: newGoal };
       setUser(updatedUser);
       localStorage.setItem('noor_user', JSON.stringify(updatedUser));
+      trackGoalCreated(khatams, days);
       goBack();
     };
 
@@ -1655,9 +1686,9 @@ export default function App() {
           isPlaying={isPlaying}
           setView={navigateTo}
           goBack={goBack}
-          onNextSurah={activeSurah && activeSurah.number < 114 ? () => handleSurahClick(activeSurah.number + 1) : null}
+          onNextSurah={activeSurah && activeSurah.number < 114 ? () => { trackSurahNavigated('next', activeSurah.number, activeSurah.number + 1); handleSurahClick(activeSurah.number + 1); } : null}
           nextSurahName={activeSurah ? surahs.find(s => s.number === activeSurah.number + 1)?.englishName || null : null}
-          onPrevSurah={activeSurah && activeSurah.number > 1 ? () => handleSurahClick(activeSurah.number - 1) : null}
+          onPrevSurah={activeSurah && activeSurah.number > 1 ? () => { trackSurahNavigated('previous', activeSurah.number, activeSurah.number - 1); handleSurahClick(activeSurah.number - 1); } : null}
           prevSurahName={activeSurah ? surahs.find(s => s.number === activeSurah.number - 1)?.englishName || null : null}
         />}
         {view === 'settings' && <SettingsView />}
