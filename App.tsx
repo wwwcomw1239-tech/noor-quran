@@ -117,10 +117,16 @@ const SurahView: React.FC<SurahViewProps> = ({
   // Intersection Observer for Automatic Tracking
   const observer = useRef<IntersectionObserver | null>(null);
   const lastReadRef = useRef<{ surah: number, ayah: number } | null>(null);
+  const handlePageReadRef = useRef(handlePageRead);
 
-  // Keep lastReadRef in sync with the latest user prop (especially on initial mount)
+  // Keep refs in sync without causing observer re-creation
   useEffect(() => {
-    if (user?.lastRead) {
+    handlePageReadRef.current = handlePageRead;
+  });
+
+  // Initialize lastReadRef from user prop on mount
+  useEffect(() => {
+    if (user?.lastRead && !lastReadRef.current) {
       lastReadRef.current = user.lastRead;
     }
   }, [user?.lastRead?.surah, user?.lastRead?.ayah]);
@@ -129,6 +135,8 @@ const SurahView: React.FC<SurahViewProps> = ({
     if (observer.current) observer.current.disconnect();
     if (!activeSurah) return;
 
+    const surahNum = activeSurah.number;
+
     const handleIntersect = (entries: IntersectionObserverEntry[]) => {
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
@@ -136,22 +144,22 @@ const SurahView: React.FC<SurahViewProps> = ({
           const ayahAttr = entry.target.getAttribute('data-ayah');
 
           if (pageAttr) {
-            handlePageRead(parseInt(pageAttr));
+            handlePageReadRef.current(parseInt(pageAttr));
           }
 
           if (ayahAttr) {
             const ayahNum = parseInt(ayahAttr);
-            const surahNum = activeSurah.number;
             lastReadRef.current = { surah: surahNum, ayah: ayahNum };
 
-            if (user) {
+            // Write directly to localStorage (read-modify-write to avoid clobbering other fields)
+            try {
               const currentUserStr = localStorage.getItem('noor_user');
               if (currentUserStr) {
                 const currentUser = JSON.parse(currentUserStr);
                 currentUser.lastRead = { surah: surahNum, ayah: ayahNum };
                 localStorage.setItem('noor_user', JSON.stringify(currentUser));
               }
-            }
+            } catch (e) { /* ignore */ }
           }
         }
       });
@@ -166,18 +174,19 @@ const SurahView: React.FC<SurahViewProps> = ({
     ayahElements.forEach(el => observer.current?.observe(el));
 
     return () => observer.current?.disconnect();
-  }, [activeSurah, visibleCount, handlePageRead, user]);
+  }, [activeSurah, visibleCount]);
 
   // Sync Ref to State + localStorage on Unmount
   useEffect(() => {
     return () => {
       if (lastReadRef.current) {
+        const lr = lastReadRef.current;
         // Sync to React state
         setUser(prev => {
           if (!prev) return prev;
-          const updated = { ...prev, lastRead: lastReadRef.current! };
+          const updated = { ...prev, lastRead: lr };
           // Also persist to localStorage so it survives page reloads
-          localStorage.setItem('noor_user', JSON.stringify(updated));
+          try { localStorage.setItem('noor_user', JSON.stringify(updated)); } catch(e) {}
           return updated;
         });
       }
@@ -707,11 +716,16 @@ export default function App() {
 
   // --- Automatic Progress Logging ---
 
-  const handlePageRead = (pageNumber: number) => {
-    if (!user || !user.ramadanGoal || !user.ramadanGoal.isActive) return;
+  const handlePageRead = useCallback((pageNumber: number) => {
+    // Read latest user from localStorage to avoid clobbering lastRead
+    const currentUserStr = localStorage.getItem('noor_user');
+    if (!currentUserStr) return;
+    
+    const currentUser: UserProfile = JSON.parse(currentUserStr);
+    if (!currentUser.ramadanGoal || !currentUser.ramadanGoal.isActive) return;
 
     const today = new Date().toISOString().split('T')[0];
-    const goal = user.ramadanGoal;
+    const goal = currentUser.ramadanGoal;
     if (goal.progress[pageNumber]) return;
 
     const newProgress = { ...goal.progress, [pageNumber]: today };
@@ -728,10 +742,11 @@ export default function App() {
       setShowCongrats(true);
     }
 
-    const updatedUser = { ...user, ramadanGoal: updatedGoal };
+    // Preserve lastRead from localStorage (not stale React state)
+    const updatedUser = { ...currentUser, ramadanGoal: updatedGoal };
     setUser(updatedUser);
     localStorage.setItem('noor_user', JSON.stringify(updatedUser));
-  };
+  }, [setUser, setShowCongrats]);
 
 
   // --- Views ---
