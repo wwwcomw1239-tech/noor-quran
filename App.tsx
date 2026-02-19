@@ -59,12 +59,28 @@ import {
   Clock,
   CloudSun,
   ChevronsLeft,
-  ChevronsRight
+  ChevronsRight,
+  Bell,
+  BellOff
 } from 'lucide-react';
 import { Surah, SurahDetails, UserSettings, UserProfile, Ayah, Bookmark as BookmarkType, RamadanGoal, ViewState } from './types';
 import { fetchAllSurahs, fetchSurahDetails, clearSurahDetailsCache } from './services/quranService';
 import { DEFAULT_SETTINGS, POPULAR_SURAHS, DAILY_DUAS, THEMES, RECITERS } from './constants';
 import { getRamadanStatus } from './utils/date';
+import {
+  NotificationSettings,
+  DEFAULT_NOTIFICATION_SETTINGS,
+  loadNotificationSettings,
+  saveNotificationSettings,
+  requestNotificationPermission,
+  isNotificationSupported,
+  getPermissionStatus,
+  scheduleDailyReminder,
+  scheduleStreakReminder,
+  schedulePrayerAlerts,
+  scheduleRamadanGoalReminder,
+  clearAllTimers,
+} from './services/notificationService';
 
 // --- Helper Components ---
 
@@ -692,6 +708,45 @@ export default function App() {
   const [todaysDua, setTodaysDua] = useState(DAILY_DUAS[0]);
   const [prayerTimes, setPrayerTimes] = useState<Record<string, string> | null>(null);
   const [prayerCity, setPrayerCity] = useState<string>('');
+  const [notifSettings, setNotifSettings] = useState<NotificationSettings>(loadNotificationSettings());
+
+  // --- Notification scheduling ---
+  useEffect(() => {
+    if (!notifSettings.enabled || getPermissionStatus() !== 'granted') {
+      clearAllTimers();
+      return;
+    }
+    // Daily reading reminder
+    if (notifSettings.dailyReminder) {
+      scheduleDailyReminder(notifSettings.dailyReminderTime);
+    }
+    // Streak reminder
+    if (notifSettings.streakReminder && user) {
+      const today = new Date().toISOString().split('T')[0];
+      const hasReadToday = user.lastActiveDate === today;
+      scheduleStreakReminder(hasReadToday, user.streak);
+    }
+    // Prayer alerts
+    if (notifSettings.prayerAlerts && prayerTimes) {
+      schedulePrayerAlerts(prayerTimes, notifSettings.prayerAlertMinutesBefore);
+    }
+    // Ramadan goal reminder
+    if (notifSettings.ramadanGoalReminder && user?.ramadanGoal?.isActive) {
+      const goal = user.ramadanGoal;
+      const todayStr = new Date().toISOString().split('T')[0];
+      const pagesReadToday = Object.values(goal.progress || {}).filter(d => d === todayStr).length;
+      const dailyTarget = Math.ceil((604 * goal.targetKhatams) / goal.daysDuration);
+      scheduleRamadanGoalReminder(pagesReadToday, dailyTarget);
+    }
+
+    return () => clearAllTimers();
+  }, [notifSettings, user?.lastActiveDate, user?.streak, user?.ramadanGoal, prayerTimes]);
+
+  const updateNotifSettings = (partial: Partial<NotificationSettings>) => {
+    const updated = { ...notifSettings, ...partial };
+    setNotifSettings(updated);
+    saveNotificationSettings(updated);
+  };
 
   // Navigation history
   const viewHistoryRef = useRef<ViewState[]>([]);
@@ -1365,7 +1420,7 @@ export default function App() {
       const newGoal: RamadanGoal = {
         isActive: true,
         targetKhatams: khatams,
-        daysDuration: days, // Uses the auto-synced or manual value
+        daysDuration: days,
         startDate: Date.now(),
         progress: {},
         lastCongratulatedDate: ''
@@ -1378,66 +1433,122 @@ export default function App() {
     };
 
     const dailyPages = Math.ceil((604 * khatams) / days);
+    const totalPages = Math.ceil(604 * khatams);
+    const dailyMinutes = Math.ceil(dailyPages * 1.5);
+
+    const khatamPresets = [0.5, 1, 2, 3];
 
     return (
-      <div className="min-h-[100dvh] pt-12 px-6 pb-32 animate-fade-in flex flex-col items-center justify-center relative">
-        <div className={`absolute top-0 right-0 p-32 ${currentTheme.bg} opacity-10 blur-[100px] rounded-full pointer-events-none`}></div>
+      <div className="min-h-[100dvh] animate-fade-in relative overflow-hidden">
+        {/* Background decorative elements */}
+        <div className={`absolute top-[-80px] right-[-60px] w-64 h-64 ${currentTheme.bg} opacity-[0.07] blur-[80px] rounded-full pointer-events-none`}></div>
+        <div className={`absolute bottom-[200px] left-[-40px] w-48 h-48 ${currentTheme.bg} opacity-[0.05] blur-[60px] rounded-full pointer-events-none`}></div>
 
-        <div className="w-full max-w-md relative z-10">
-          <button onClick={() => goBack()} className="mb-6 flex items-center text-white/50 hover:text-white transition-colors">
-            <ChevronLeft size={20} /> <span className="ml-1">Cancel</span>
-          </button>
+        {/* Header */}
+        <div className="sticky top-0 z-50 bg-black/80 backdrop-blur-xl border-b border-white/[0.04]">
+          <div className="flex items-center justify-between px-5 py-4 max-w-md mx-auto">
+            <button onClick={() => goBack()} className="p-1.5 rounded-full hover:bg-white/10 transition-colors text-white/50">
+              <ChevronLeft size={22} />
+            </button>
+            <div className="flex items-center gap-2">
+              <Moon size={16} className={currentTheme.text} />
+              <span className="text-sm font-semibold text-white/80">Set Your Goal</span>
+            </div>
+            <div className="w-8" />
+          </div>
+        </div>
 
-          <h2 className={`text-4xl font-arabic font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r ${currentTheme.gradient}`}>Ramadan Goal</h2>
-          <p className="text-white/60 mb-8 text-lg font-light">Design your spiritual journey.</p>
+        <div className="px-5 pt-6 pb-36 max-w-md mx-auto relative z-10">
 
-          {/* Hero Card - Daily Pages */}
-          <div className="mb-8 relative group">
-            <div className={`absolute -inset-1 ${currentTheme.bg} rounded-3xl blur opacity-20 group-hover:opacity-40 transition duration-1000`}></div>
-            <GlassCard className="relative p-8 text-center border-t border-white/10" variant="dark">
-              <span className="text-sm font-semibold uppercase tracking-widest text-white/40 mb-2 block">Daily Target</span>
-              <div className="flex items-baseline justify-center gap-2">
-                <span className={`text-6xl font-bold ${currentTheme.text} drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]`}>{dailyPages}</span>
-                <span className="text-xl text-white/60 font-light">Pages</span>
+          {/* Title */}
+          <div className="text-center mb-8">
+            <h2 className={`text-3xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r ${currentTheme.gradient}`}>
+              Ramadan Journey
+            </h2>
+            <p className="text-white/40 text-sm">Set a Quran reading goal for the blessed month</p>
+            {isRamadanMode && (
+              <div className="inline-flex items-center gap-1.5 mt-3 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="text-emerald-400 text-[11px] font-medium">Ramadan is Active</span>
               </div>
-              <p className="text-xs text-white/40 mt-4">
-                {khatams} Khatam{khatams > 1 ? 's' : ''} in {days} Days
-              </p>
-            </GlassCard>
+            )}
           </div>
 
-          <div className="space-y-6">
-            {/* Slider: Khatams */}
-            <GlassCard className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <label className="text-sm font-bold text-white/80">Khatams</label>
-                <span className={`text-2xl font-bold font-arabic ${currentTheme.text}`}>{khatams}</span>
+          {/* Daily Summary Card */}
+          <div className="mb-8 relative">
+            <div className={`absolute -inset-px rounded-[22px] bg-gradient-to-br ${currentTheme.gradient} opacity-20`}></div>
+            <div className="relative rounded-[22px] bg-black/60 backdrop-blur-xl border border-white/[0.06] p-6 overflow-hidden">
+              {/* Subtle pattern */}
+              <div className="absolute top-0 right-0 w-32 h-32 opacity-[0.03]">
+                <span className="font-arabic text-7xl text-white">﷽</span>
               </div>
-              <input
-                type="range"
-                min="0.5"
-                max="10"
-                step="0.5"
-                value={khatams}
-                onChange={(e) => setKhatams(parseFloat(e.target.value))}
-                className={`w-full h-2 rounded-lg appearance-none cursor-pointer bg-white/10 accent-${currentTheme.bg.replace('bg-', '')}`}
-              />
-              <div className="flex justify-between mt-2 text-xs text-white/30 font-medium">
-                <span>0.5</span>
-                <span>10</span>
-              </div>
-            </GlassCard>
 
-            {/* Slider: Days */}
-            <GlassCard className={`p-6 transition-all duration-500 ${isRamadanMode ? 'border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.1)]' : ''}`}>
-              <div className="flex justify-between items-center mb-4">
-                <label className="text-sm font-bold text-white/80">Duration</label>
-                <div className="flex items-center gap-2">
-                  {isRamadanMode && <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20 animate-pulse">Synced</span>}
-                  <span className={`text-2xl font-bold font-arabic ${currentTheme.text}`}>{days} <span className="text-sm text-white/40 font-sans">Days</span></span>
+              <div className="relative z-10">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/30 mb-4">Your Daily Commitment</p>
+
+                <div className="flex items-end gap-3 mb-5">
+                  <span className={`text-5xl font-bold tracking-tight ${currentTheme.text}`}>{dailyPages}</span>
+                  <span className="text-lg text-white/40 font-light pb-1">pages / day</span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-white/[0.04] rounded-xl p-3 text-center">
+                    <p className="text-white/30 text-[10px] uppercase tracking-wider mb-1">Khatams</p>
+                    <p className={`text-lg font-bold ${currentTheme.text}`}>{khatams}</p>
+                  </div>
+                  <div className="bg-white/[0.04] rounded-xl p-3 text-center">
+                    <p className="text-white/30 text-[10px] uppercase tracking-wider mb-1">Days</p>
+                    <p className={`text-lg font-bold ${currentTheme.text}`}>{days}</p>
+                  </div>
+                  <div className="bg-white/[0.04] rounded-xl p-3 text-center">
+                    <p className="text-white/30 text-[10px] uppercase tracking-wider mb-1">~Minutes</p>
+                    <p className={`text-lg font-bold ${currentTheme.text}`}>{dailyMinutes}</p>
+                  </div>
                 </div>
               </div>
+            </div>
+          </div>
 
+          {/* Khatam Selection */}
+          <div className="mb-6">
+            <div className="flex items-center gap-2 mb-3 px-1">
+              <Target size={14} className={currentTheme.text} />
+              <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-white/40">How many Khatams?</p>
+            </div>
+
+            {/* Preset Buttons */}
+            <div className="grid grid-cols-4 gap-2">
+              {khatamPresets.map(val => (
+                <button
+                  key={val}
+                  onClick={() => setKhatams(val)}
+                  className={`py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                    khatams === val
+                      ? `bg-gradient-to-br ${currentTheme.gradient} text-black shadow-lg scale-[1.02]`
+                      : 'bg-white/[0.04] text-white/50 border border-white/[0.06] hover:bg-white/[0.08] hover:text-white/70 active:scale-95'
+                  }`}
+                >
+                  {val}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Duration */}
+          <div className="mb-8">
+            <div className="flex items-center gap-2 mb-3 px-1">
+              <Calendar size={14} className={currentTheme.text} />
+              <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-white/40">Duration</p>
+              {isRamadanMode && (
+                <span className="text-[9px] bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/15 font-medium">Auto-synced</span>
+              )}
+            </div>
+
+            <div className={`bg-white/[0.03] rounded-xl border border-white/[0.05] p-4 transition-all ${isRamadanMode ? 'border-emerald-500/15' : ''}`}>
+              <div className="flex justify-between items-center mb-3">
+                <span className="text-xs text-white/30">{isRamadanMode ? 'Days remaining in Ramadan' : 'Number of days'}</span>
+                <span className={`text-sm font-bold ${currentTheme.text}`}>{days} days</span>
+              </div>
               <input
                 type="range"
                 min="5"
@@ -1445,20 +1556,56 @@ export default function App() {
                 disabled={isRamadanMode}
                 value={days}
                 onChange={(e) => setDays(parseInt(e.target.value))}
-                className={`w-full h-2 rounded-lg appearance-none cursor-pointer bg-white/10 ${isRamadanMode ? 'opacity-50 cursor-not-allowed' : ''} accent-${currentTheme.bg.replace('bg-', '')}`}
+                className={`w-full h-1.5 rounded-lg appearance-none bg-white/10 ${isRamadanMode ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+                style={{
+                  accentColor: currentTheme.text.includes('emerald') ? '#34d399' :
+                               currentTheme.text.includes('blue') ? '#60a5fa' :
+                               currentTheme.text.includes('rose') ? '#fb7185' :
+                               currentTheme.text.includes('amber') ? '#fbbf24' :
+                               currentTheme.text.includes('violet') ? '#a78bfa' : '#34d399'
+                }}
               />
-              <div className="flex justify-between mt-2 text-xs text-white/30 font-medium">
-                <span>5 Days</span>
-                <span>60 Days</span>
+              <div className="flex justify-between mt-1.5 text-[10px] text-white/20">
+                <span>5</span>
+                <span>30</span>
+                <span>60</span>
               </div>
-            </GlassCard>
+            </div>
           </div>
 
+          {/* Breakdown Info */}
+          <div className="bg-white/[0.02] rounded-xl border border-white/[0.04] p-4 mb-8">
+            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-white/25 mb-3">Breakdown</p>
+            <div className="space-y-2.5">
+              <div className="flex justify-between">
+                <span className="text-xs text-white/40">Total pages</span>
+                <span className="text-xs text-white/70 font-medium">{totalPages}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-xs text-white/40">Pages per day</span>
+                <span className="text-xs text-white/70 font-medium">{dailyPages}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-xs text-white/40">Estimated daily time</span>
+                <span className="text-xs text-white/70 font-medium">~{dailyMinutes} min</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-xs text-white/40">That's roughly</span>
+                <span className="text-xs text-white/70 font-medium">{Math.ceil(dailyPages / 15)} juz per day</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Start Button */}
           <button
             onClick={finishSetup}
-            className={`w-full mt-10 py-4 rounded-2xl font-bold text-lg text-black ${currentTheme.bg} hover:opacity-90 transition-all shadow-lg hover:shadow-[0_0_20px_rgba(255,215,0,0.3)] transform hover:-translate-y-1 active:scale-95`}
+            className={`w-full py-4 rounded-2xl font-semibold text-base text-black bg-gradient-to-r ${currentTheme.gradient} hover:opacity-90 transition-all active:scale-[0.97] shadow-lg relative overflow-hidden group`}
           >
-            Start Journey
+            <div className="absolute inset-0 bg-white/0 group-hover:bg-white/10 transition-colors duration-300"></div>
+            <span className="relative flex items-center justify-center gap-2">
+              <Star size={16} />
+              Begin My Journey
+            </span>
           </button>
         </div>
       </div>
@@ -1977,6 +2124,9 @@ export default function App() {
     const reciterDropdownRef = useRef<HTMLDivElement>(null);
     const previewAudioRef = useRef<HTMLAudioElement | null>(null);
     const [previewingReciter, setPreviewingReciter] = useState<string | null>(null);
+    const [notifOpen, setNotifOpen] = useState(false);
+    const [permissionStatus, setPermissionStatus] = useState(getPermissionStatus());
+    const [tempTime, setTempTime] = useState(notifSettings.dailyReminderTime);
 
     const playReciterPreview = (reciterId: string, e: React.MouseEvent) => {
       e.stopPropagation();
@@ -2262,6 +2412,151 @@ export default function App() {
             </div>
           </section>
 
+          {/* Notifications */}
+          {isNotificationSupported() && (
+          <section>
+            <p className="text-[10px] font-bold text-white/25 uppercase tracking-[0.15em] mb-2.5 ml-1">Notifications</p>
+            <div className="rounded-xl bg-white/[0.03] border border-white/[0.05] divide-y divide-white/[0.04]">
+              {/* Master toggle */}
+              <div className="flex items-center justify-between p-3.5">
+                <div className="flex items-center gap-2.5">
+                  {notifSettings.enabled ? <Bell size={15} className={currentTheme.text} /> : <BellOff size={15} className="text-white/30" />}
+                  <span className="text-[13px] font-medium text-white/70">Notifications</span>
+                  {permissionStatus === 'denied' && (
+                    <span className="text-[9px] bg-red-500/15 text-red-400 px-1.5 py-0.5 rounded font-medium">Blocked</span>
+                  )}
+                </div>
+                <button
+                  onClick={async () => {
+                    if (!notifSettings.enabled) {
+                      const granted = await requestNotificationPermission();
+                      setPermissionStatus(getPermissionStatus());
+                      if (granted) {
+                        updateNotifSettings({ enabled: true });
+                      }
+                    } else {
+                      updateNotifSettings({ enabled: false });
+                    }
+                  }}
+                  className={`w-10 h-[22px] rounded-full relative transition-colors ${notifSettings.enabled ? currentTheme.bg : 'bg-white/15'}`}
+                >
+                  <div className={`absolute top-[3px] w-4 h-4 rounded-full bg-white transition-all ${notifSettings.enabled ? 'left-[22px]' : 'left-[3px]'}`}></div>
+                </button>
+              </div>
+
+              {notifSettings.enabled && (
+                <>
+                  {/* Daily Reading Reminder */}
+                  <div className="p-3.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <BookOpen size={15} className={currentTheme.text} />
+                        <span className="text-[13px] font-medium text-white/70">Daily Reminder</span>
+                      </div>
+                      <button
+                        onClick={() => updateNotifSettings({ dailyReminder: !notifSettings.dailyReminder })}
+                        className={`w-10 h-[22px] rounded-full relative transition-colors ${notifSettings.dailyReminder ? currentTheme.bg : 'bg-white/15'}`}
+                      >
+                        <div className={`absolute top-[3px] w-4 h-4 rounded-full bg-white transition-all ${notifSettings.dailyReminder ? 'left-[22px]' : 'left-[3px]'}`}></div>
+                      </button>
+                    </div>
+                    {notifSettings.dailyReminder && (
+                      <div className="mt-3 flex items-center gap-2">
+                        <Clock size={12} className="text-white/25" />
+                        <span className="text-[11px] text-white/30">Remind at</span>
+                        <input
+                          type="time"
+                          value={tempTime}
+                          onChange={(e) => setTempTime(e.target.value)}
+                          onBlur={() => { if (tempTime) updateNotifSettings({ dailyReminderTime: tempTime }); }}
+                          className={`ml-auto bg-white/[0.06] border border-white/[0.08] rounded-xl px-3 py-2 text-sm ${currentTheme.text} font-semibold focus:outline-none focus:border-white/25 focus:bg-white/[0.08] transition-all appearance-none [color-scheme:dark]`}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Prayer Time Alerts */}
+                  <div className="p-3.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <Moon size={15} className={currentTheme.text} />
+                        <div>
+                          <span className="text-[13px] font-medium text-white/70">Prayer Alerts</span>
+                          {!prayerTimes && <p className="text-[10px] text-white/20">Enable location for prayer times</p>}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => updateNotifSettings({ prayerAlerts: !notifSettings.prayerAlerts })}
+                        disabled={!prayerTimes}
+                        className={`w-10 h-[22px] rounded-full relative transition-colors ${!prayerTimes ? 'opacity-30 cursor-not-allowed' : ''} ${notifSettings.prayerAlerts && prayerTimes ? currentTheme.bg : 'bg-white/15'}`}
+                      >
+                        <div className={`absolute top-[3px] w-4 h-4 rounded-full bg-white transition-all ${notifSettings.prayerAlerts && prayerTimes ? 'left-[22px]' : 'left-[3px]'}`}></div>
+                      </button>
+                    </div>
+                    {notifSettings.prayerAlerts && prayerTimes && (
+                      <div className="mt-3 flex items-center gap-2">
+                        <Clock size={12} className="text-white/25" />
+                        <span className="text-[11px] text-white/30">Alert</span>
+                        <div className="flex gap-1.5 ml-auto">
+                          {[5, 10, 15, 30].map(min => (
+                            <button
+                              key={min}
+                              onClick={() => updateNotifSettings({ prayerAlertMinutesBefore: min })}
+                              className={`px-2 py-1 rounded-md text-[11px] font-medium transition-all ${
+                                notifSettings.prayerAlertMinutesBefore === min
+                                  ? `bg-gradient-to-r ${currentTheme.gradient} text-black`
+                                  : 'bg-white/[0.05] text-white/30 hover:text-white/50'
+                              }`}
+                            >
+                              {min}m
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Streak Reminder */}
+                  <div className="flex items-center justify-between p-3.5">
+                    <div className="flex items-center gap-2.5">
+                      <Flame size={15} className={currentTheme.text} />
+                      <div>
+                        <span className="text-[13px] font-medium text-white/70">Streak Reminder</span>
+                        <p className="text-[10px] text-white/20">Evening nudge if you haven't read</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => updateNotifSettings({ streakReminder: !notifSettings.streakReminder })}
+                      className={`w-10 h-[22px] rounded-full relative transition-colors ${notifSettings.streakReminder ? currentTheme.bg : 'bg-white/15'}`}
+                    >
+                      <div className={`absolute top-[3px] w-4 h-4 rounded-full bg-white transition-all ${notifSettings.streakReminder ? 'left-[22px]' : 'left-[3px]'}`}></div>
+                    </button>
+                  </div>
+
+                  {/* Ramadan Goal Reminder */}
+                  {user?.ramadanGoal?.isActive && (
+                    <div className="flex items-center justify-between p-3.5">
+                      <div className="flex items-center gap-2.5">
+                        <Target size={15} className={currentTheme.text} />
+                        <div>
+                          <span className="text-[13px] font-medium text-white/70">Goal Reminder</span>
+                          <p className="text-[10px] text-white/20">Remind if daily pages incomplete</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => updateNotifSettings({ ramadanGoalReminder: !notifSettings.ramadanGoalReminder })}
+                        className={`w-10 h-[22px] rounded-full relative transition-colors ${notifSettings.ramadanGoalReminder ? currentTheme.bg : 'bg-white/15'}`}
+                      >
+                        <div className={`absolute top-[3px] w-4 h-4 rounded-full bg-white transition-all ${notifSettings.ramadanGoalReminder ? 'left-[22px]' : 'left-[3px]'}`}></div>
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </section>
+          )}
+
           {/* Goals */}
           <section>
             <p className="text-[10px] font-bold text-white/25 uppercase tracking-[0.15em] mb-2.5 ml-1">Goals</p>
@@ -2282,73 +2577,113 @@ export default function App() {
     );
   };
 
-  const BookmarksView = () => (
-    <div className="min-h-[100dvh] pt-12 px-5 pb-32 animate-fade-in">
-      {/* Header + streak/profile */}
-      <div className="flex items-center justify-between mb-5">
-        <div>
-          <h2 className="text-2xl font-bold text-white">Bookmarks</h2>
-          <p className="text-white/30 text-xs mt-0.5">{user?.bookmarks.length || 0} saved ayahs</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {user?.streak && user.streak > 0 ? (
-            <div className="flex items-center gap-1 px-2.5 py-1 rounded-full cursor-pointer hover:bg-white/10 transition-colors" style={{background: 'rgba(255,255,255,0.05)'}}>
-              <Flame size={11} className={currentTheme.text} fill="currentColor" />
-              <span className={`text-[11px] font-bold ${currentTheme.text}`}>{user.streak}</span>
+  const BookmarksView = () => {
+    const bookmarks = user?.bookmarks || [];
+    // Group bookmarks by surah
+    type SurahGroup = { surahName: string; items: BookmarkType[] };
+    const grouped = bookmarks.reduce<Record<number, SurahGroup>>((acc, b) => {
+      if (!acc[b.surahNumber]) acc[b.surahNumber] = { surahName: b.surahName, items: [] };
+      acc[b.surahNumber].items.push(b);
+      return acc;
+    }, {});
+    const surahGroups = (Object.entries(grouped) as [string, SurahGroup][]).sort(([a], [b]) => Number(a) - Number(b));
+
+    return (
+      <div className="min-h-[100dvh] animate-fade-in relative">
+        {/* Header */}
+        <div className="sticky top-0 z-50 bg-black/80 backdrop-blur-xl border-b border-white/[0.04]">
+          <div className="px-5 pt-12 pb-4 max-w-md mx-auto">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold text-white">Saved</h2>
+                <p className="text-white/30 text-xs mt-0.5">{bookmarks.length} ayah{bookmarks.length !== 1 ? 's' : ''} bookmarked</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {user?.streak && user.streak > 0 ? (
+                  <div className="flex items-center gap-1 px-2.5 py-1 rounded-full" style={{background: 'rgba(255,255,255,0.05)'}}>
+                    <Flame size={11} className={currentTheme.text} fill="currentColor" />
+                    <span className={`text-[11px] font-bold ${currentTheme.text}`}>{user.streak}</span>
+                  </div>
+                ) : null}
+                <div
+                  onClick={() => navigateTo('settings')}
+                  className="w-9 h-9 rounded-full bg-white/[0.06] border border-white/[0.08] flex items-center justify-center cursor-pointer hover:bg-white/10 transition-colors"
+                >
+                  <span className="font-semibold text-sm text-white/70">{user?.name?.charAt(0)}</span>
+                </div>
+              </div>
             </div>
-          ) : null}
-          <div
-            onClick={() => navigateTo('settings')}
-            className="w-9 h-9 rounded-full bg-white/[0.06] border border-white/[0.08] flex items-center justify-center cursor-pointer hover:bg-white/10 transition-colors"
-          >
-            <span className="font-semibold text-sm text-white/70">{user?.name?.charAt(0)}</span>
           </div>
+        </div>
+
+        <div className="px-5 pb-36 max-w-md mx-auto">
+          {bookmarks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-28">
+              <div className="relative mb-6">
+                <div className={`absolute -inset-4 ${currentTheme.bg} opacity-10 blur-2xl rounded-full`}></div>
+                <div className="relative w-20 h-20 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center">
+                  <Bookmark size={28} className="text-white/10" />
+                </div>
+              </div>
+              <p className="text-white/40 text-sm font-medium mb-1.5">No saved ayahs</p>
+              <p className="text-white/20 text-xs text-center max-w-[220px] leading-relaxed">
+                Tap the bookmark icon while reading to save verses here
+              </p>
+            </div>
+          ) : (
+            <div className="pt-4 space-y-5">
+              {surahGroups.map(([surahNum, group]) => (
+                <div key={surahNum}>
+                  {/* Surah group header */}
+                  <div className="flex items-center gap-2.5 mb-2.5 px-1">
+                    <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${currentTheme.gradient} flex items-center justify-center shrink-0`}>
+                      <span className="text-black text-[10px] font-bold">{surahNum}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs font-semibold text-white/60">{group.surahName}</span>
+                    </div>
+                    <span className="text-[10px] text-white/20">{group.items.length} ayah{group.items.length !== 1 ? 's' : ''}</span>
+                  </div>
+
+                  {/* Bookmark cards */}
+                  <div className="rounded-2xl bg-white/[0.02] border border-white/[0.05] overflow-hidden divide-y divide-white/[0.04]">
+                    {group.items.map((bookmark) => (
+                      <div
+                        key={bookmark.id}
+                        onClick={() => handleBookmarkClick(bookmark)}
+                        className="group flex items-start gap-3.5 p-4 cursor-pointer hover:bg-white/[0.03] active:bg-white/[0.05] transition-colors"
+                      >
+                        {/* Ayah number pill */}
+                        <div className={`mt-1 shrink-0 min-w-[28px] h-[28px] rounded-full border ${currentTheme.border} border-opacity-20 flex items-center justify-center`}>
+                          <span className={`text-[10px] font-bold ${currentTheme.text}`}>{bookmark.ayahNumber}</span>
+                        </div>
+
+                        {/* Content */}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-quran text-right text-[17px] text-white/60 leading-[2] line-clamp-2 mb-2" dir="rtl">
+                            {bookmark.textPreview}
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <Clock size={10} className="text-white/15" />
+                            <span className="text-[10px] text-white/20">
+                              {new Date(bookmark.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Arrow */}
+                        <ChevronRight size={14} className="text-white/10 shrink-0 mt-2.5 group-hover:text-white/25 transition-colors" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
-
-      {user?.bookmarks.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24">
-          <div className="w-16 h-16 rounded-2xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center mb-4">
-            <Bookmark size={24} className="text-white/15" />
-          </div>
-          <p className="text-white/30 text-sm font-medium mb-1">No bookmarks yet</p>
-          <p className="text-white/15 text-xs">Tap the bookmark icon on any ayah to save it</p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {user?.bookmarks.map((bookmark) => (
-            <div
-              key={bookmark.id}
-              onClick={() => handleBookmarkClick(bookmark)}
-              className="group flex gap-3.5 p-3.5 rounded-xl cursor-pointer hover:bg-white/[0.04] active:scale-[0.98] transition-all"
-            >
-              {/* Surah number badge */}
-              <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${currentTheme.gradient} flex items-center justify-center shrink-0 mt-0.5`}>
-                <span className="text-black text-[11px] font-bold">{bookmark.surahNumber}</span>
-              </div>
-
-              {/* Content */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <h4 className="font-semibold text-[15px] text-white">{bookmark.surahName}</h4>
-                  <span className="text-white/20 text-[11px]">Ayah {bookmark.ayahNumber}</span>
-                </div>
-                <p className="font-quran text-right text-[16px] text-white/50 leading-relaxed truncate" dir="rtl">
-                  {bookmark.textPreview}
-                </p>
-                <p className="text-[10px] text-white/20 mt-1.5">
-                  {new Date(bookmark.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                </p>
-              </div>
-
-              {/* Arrow */}
-              <ChevronRight size={14} className="text-white/15 shrink-0 mt-3 group-hover:text-white/30 transition-colors" />
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+    );
+  };
 
   // --- Layout ---
 
