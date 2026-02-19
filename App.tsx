@@ -277,7 +277,7 @@ const SurahView: React.FC<SurahViewProps> = ({
     const timer = setTimeout(() => {
       const el = document.getElementById(`ayah-${ayahInSurah}`);
       if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     }, 100);
     return () => clearTimeout(timer);
@@ -322,6 +322,7 @@ const SurahView: React.FC<SurahViewProps> = ({
             id={`ayah-${ayah.numberInSurah}`}
             data-page={ayah.page}
             data-ayah={ayah.numberInSurah}
+            style={{ scrollMarginTop: '6rem' }}
             className={`ayah-container py-6 border-b border-white/5 transition-colors duration-500 ${playingAyahNumber === ayah.number ? `${currentTheme.bg} bg-opacity-10 rounded-xl px-2` : ''} ${scrollToAyah === ayah.numberInSurah ? 'bg-white/5 rounded-xl px-2' : ''}`}
           >
             {/* Actions Bar */}
