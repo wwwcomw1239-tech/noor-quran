@@ -964,6 +964,8 @@ export default function App() {
   audioQueueRef.current = audioQueue;
   const playingSurahNumberRef = useRef(playingSurahNumber);
   playingSurahNumberRef.current = playingSurahNumber;
+  const playbackSpeedRef = useRef(playbackSpeed);
+  playbackSpeedRef.current = playbackSpeed;
 
   // Auto-continue: load next surah when current one ends
   const loadNextSurahAudio = useCallback(async () => {
@@ -1005,8 +1007,13 @@ export default function App() {
       const idx = currentAudioIndexRef.current;
       const queue = audioQueueRef.current;
       if (idx < queue.length - 1) {
-        // Swap preloaded audio into main for gapless playback
+        // Swap preloaded element into main
         swapToPreloaded();
+        // Play IMMEDIATELY — before React's state cycle — to eliminate any audible gap
+        audioRef.current.playbackRate = playbackSpeedRef.current;
+        audioRef.current.play().catch(e => console.error('Audio play error', e));
+        setIsPlaying(true);
+        // Update index for UI (effect will skip play since audio is already running)
         setCurrentAudioIndex(idx + 1);
       } else {
         loadNextSurahAudio();
@@ -1026,7 +1033,12 @@ export default function App() {
       const ayah = audioQueue[currentAudioIndex];
       if (!ayah.audio) return;
       const audio = audioRef.current;
-      // If audio src already matches (swapped from preload), just play
+      // Skip if already playing (started immediately in onended to avoid gap)
+      if (!audio.paused) {
+        preloadNext(audioQueue, currentAudioIndex);
+        return;
+      }
+      // Otherwise load and play (e.g. manual track change)
       if (audio.src === ayah.audio) {
         audio.playbackRate = playbackSpeed;
         audio.play()
