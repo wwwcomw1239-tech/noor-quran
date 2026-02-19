@@ -868,6 +868,18 @@ export default function App() {
     }
   }, []);
 
+  // Swap preloaded audio into main ref for gapless playback
+  const swapToPreloaded = useCallback(() => {
+    const oldMain = audioRef.current;
+    const preloaded = preloadRef.current;
+    // Move preloaded to main, create fresh preload element
+    audioRef.current = preloaded;
+    preloadRef.current = oldMain;
+    // Transfer onended handler to new main
+    audioRef.current.onended = oldMain.onended;
+    oldMain.onended = null;
+  }, []);
+
   // Setup onended handler (uses ref to always read latest state)
   const currentAudioIndexRef = useRef(currentAudioIndex);
   currentAudioIndexRef.current = currentAudioIndex;
@@ -916,12 +928,14 @@ export default function App() {
       const idx = currentAudioIndexRef.current;
       const queue = audioQueueRef.current;
       if (idx < queue.length - 1) {
+        // Swap preloaded audio into main for gapless playback
+        swapToPreloaded();
         setCurrentAudioIndex(idx + 1);
       } else {
         loadNextSurahAudio();
       }
     };
-  }, [loadNextSurahAudio]);
+  }, [loadNextSurahAudio, swapToPreloaded]);
 
   // When track index changes, play the new track
   useEffect(() => {
@@ -935,12 +949,20 @@ export default function App() {
       const ayah = audioQueue[currentAudioIndex];
       if (!ayah.audio) return;
       const audio = audioRef.current;
-      audio.src = ayah.audio;
-      audio.load();
-      audio.playbackRate = playbackSpeed;
-      audio.play()
-        .then(() => setIsPlaying(true))
-        .catch(e => console.error("Audio play error", e));
+      // If audio src already matches (swapped from preload), just play
+      if (audio.src === ayah.audio) {
+        audio.playbackRate = playbackSpeed;
+        audio.play()
+          .then(() => setIsPlaying(true))
+          .catch(e => console.error("Audio play error", e));
+      } else {
+        audio.src = ayah.audio;
+        audio.load();
+        audio.playbackRate = playbackSpeed;
+        audio.play()
+          .then(() => setIsPlaying(true))
+          .catch(e => console.error("Audio play error", e));
+      }
       preloadNext(audioQueue, currentAudioIndex);
     } else if (currentAudioIndex === -1) {
       audioRef.current.pause();
@@ -1932,6 +1954,42 @@ export default function App() {
     const [tempName, setTempName] = useState(user?.name || '');
     const [reciterOpen, setReciterOpen] = useState(false);
     const reciterDropdownRef = useRef<HTMLDivElement>(null);
+    const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+    const [previewingReciter, setPreviewingReciter] = useState<string | null>(null);
+
+    const playReciterPreview = (reciterId: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      // Stop any existing preview
+      if (previewAudioRef.current) {
+        previewAudioRef.current.pause();
+        previewAudioRef.current = null;
+      }
+      // If clicking same reciter that's previewing, just stop
+      if (previewingReciter === reciterId) {
+        setPreviewingReciter(null);
+        return;
+      }
+      // Play Al-Fatiha ayah 1 (global ayah number 1) as preview
+      const previewUrl = `https://cdn.islamic.network/quran/audio/128/${reciterId}/1.mp3`;
+      const audio = new Audio(previewUrl);
+      previewAudioRef.current = audio;
+      setPreviewingReciter(reciterId);
+      audio.play().catch(() => setPreviewingReciter(null));
+      audio.onended = () => {
+        setPreviewingReciter(null);
+        previewAudioRef.current = null;
+      };
+    };
+
+    // Cleanup preview audio on unmount
+    useEffect(() => {
+      return () => {
+        if (previewAudioRef.current) {
+          previewAudioRef.current.pause();
+          previewAudioRef.current = null;
+        }
+      };
+    }, []);
 
     // Close dropdown on outside click
     useEffect(() => {
@@ -2097,37 +2155,52 @@ export default function App() {
               <div className={`transition-all duration-300 ease-in-out overflow-y-auto ${reciterOpen ? 'max-h-[280px] opacity-100' : 'max-h-0 opacity-0'}`}>
                 <div className="border-t border-white/[0.04] px-1 py-1">
                   {RECITERS.map((r) => (
-                    <button
-                      key={r.id}
-                      onClick={() => {
-                        if (settings.reciter !== r.id) {
-                          const newSettings = { ...settings, reciter: r.id };
-                          setSettings(newSettings);
-                          localStorage.setItem('noor_settings', JSON.stringify(newSettings));
-                          clearSurahDetailsCache();
-                          if (activeSurah) {
-                            fetchSurahDetails(activeSurah.number, r.id).then(details => {
-                              if (details) setActiveSurah(details);
-                            });
+                    <div key={r.id} className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          if (settings.reciter !== r.id) {
+                            const newSettings = { ...settings, reciter: r.id };
+                            setSettings(newSettings);
+                            localStorage.setItem('noor_settings', JSON.stringify(newSettings));
+                            clearSurahDetailsCache();
+                            if (activeSurah) {
+                              fetchSurahDetails(activeSurah.number, r.id).then(details => {
+                                if (details) setActiveSurah(details);
+                              });
+                            }
+                            if (isPlaying) {
+                              audioRef.current.pause();
+                              setIsPlaying(false);
+                              setCurrentAudioIndex(-1);
+                              setAudioQueue([]);
+                            }
                           }
-                          if (isPlaying) {
-                            audioRef.current.pause();
-                            setIsPlaying(false);
-                            setCurrentAudioIndex(-1);
-                            setAudioQueue([]);
-                          }
+                          setReciterOpen(false);
+                        }}
+                        className={`flex-1 text-left px-3 py-2 rounded-lg flex items-center gap-2.5 text-[13px] transition-colors ${
+                          settings.reciter === r.id
+                            ? `${currentTheme.text} bg-white/[0.05]`
+                            : 'text-white/50 hover:bg-white/[0.04] hover:text-white/70'
+                        }`}
+                      >
+                        <span className="flex-1">{r.name}</span>
+                        {settings.reciter === r.id && <CheckCircle2 size={13} className={currentTheme.text} />}
+                      </button>
+                      <button
+                        onClick={(e) => playReciterPreview(r.id, e)}
+                        className={`p-1.5 rounded-full shrink-0 transition-colors ${
+                          previewingReciter === r.id
+                            ? `${currentTheme.text} bg-white/10`
+                            : 'text-white/30 hover:text-white/60 hover:bg-white/[0.06]'
+                        }`}
+                        title={`Preview ${r.name}`}
+                      >
+                        {previewingReciter === r.id
+                          ? <Volume2 size={14} />
+                          : <Play size={14} />
                         }
-                        setReciterOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 rounded-lg flex items-center gap-2.5 text-[13px] transition-colors ${
-                        settings.reciter === r.id
-                          ? `${currentTheme.text} bg-white/[0.05]`
-                          : 'text-white/50 hover:bg-white/[0.04] hover:text-white/70'
-                      }`}
-                    >
-                      <span className="flex-1">{r.name}</span>
-                      {settings.reciter === r.id && <CheckCircle2 size={13} className={currentTheme.text} />}
-                    </button>
+                      </button>
+                    </div>
                   ))}
                 </div>
               </div>
