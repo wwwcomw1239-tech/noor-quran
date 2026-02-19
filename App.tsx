@@ -255,29 +255,8 @@ const SurahView: React.FC<SurahViewProps> = ({
     };
   }, [setUser]);
 
-  if (!activeSurah) return (
-    <div className="flex justify-center items-center py-20">
-      <div className={`animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 ${currentTheme.text.replace('text-', 'border-')}`}></div>
-    </div>
-  );
-
-  const fontSizeClass = {
-    'small': 'text-sm',
-    'medium': 'text-base',
-    'large': 'text-lg',
-    'xl': 'text-xl'
-  }[settings.fontSize];
-
-  const arabicFontSizeClass = {
-    'small': 'text-2xl',
-    'medium': 'text-4xl',
-    'large': 'text-5xl',
-    'xl': 'text-6xl'
-  }[settings.fontSize];
-
   const fontFamilyClass = settings.fontFamily === 'Lateef' ? 'font-quran' : 'font-arabic';
   const playingAyahNumber = currentAudioIndex >= 0 ? audioQueue[currentAudioIndex]?.number : null;
-  const displayedAyahs = activeSurah.ayahs.slice(0, visibleCount);
 
   // Auto-scroll to the currently playing ayah when it changes
   useEffect(() => {
@@ -298,6 +277,28 @@ const SurahView: React.FC<SurahViewProps> = ({
     }, 100);
     return () => clearTimeout(timer);
   }, [playingAyahNumber, activeSurah]);
+
+  if (!activeSurah) return (
+    <div className="flex justify-center items-center py-20">
+      <div className={`animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 ${currentTheme.text.replace('text-', 'border-')}`}></div>
+    </div>
+  );
+
+  const fontSizeClass = {
+    'small': 'text-sm',
+    'medium': 'text-base',
+    'large': 'text-lg',
+    'xl': 'text-xl'
+  }[settings.fontSize];
+
+  const arabicFontSizeClass = {
+    'small': 'text-2xl',
+    'medium': 'text-4xl',
+    'large': 'text-5xl',
+    'xl': 'text-6xl'
+  }[settings.fontSize];
+
+  const displayedAyahs = activeSurah.ayahs.slice(0, visibleCount);
 
   return (
     <div className="h-full overflow-y-auto pb-24 relative no-scrollbar">
