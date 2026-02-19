@@ -523,27 +523,52 @@ const CongratsModal = ({
   if (!show) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/90 backdrop-blur-xl animate-fade-in" onClick={onClose} />
-      <div className="relative bg-black border border-white/10 rounded-3xl p-8 max-w-xs w-full text-center shadow-[0_0_50px_rgba(0,0,0,0.5)] transform transition-all animate-blob">
-        <div className={`w-24 h-24 mx-auto mb-6 rounded-full bg-gradient-to-br ${theme.gradient} flex items-center justify-center shadow-2xl`}>
-          <PartyPopper size={48} className="text-white" />
-        </div>
-        <h3 className="text-3xl font-arabic font-bold mb-2 text-white">MashaAllah!</h3>
-        <p className="text-white/60 mb-8 leading-relaxed">
-          You have achieved your goal of <span className={`${theme.text} font-bold`}>{pagesRead} pages</span> today. The angels are recording your effort.
-        </p>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={onClose} />
 
-        <div className="space-y-3">
+      {/* Glow behind card */}
+      <div className={`absolute w-80 h-80 rounded-full bg-gradient-to-br ${theme.gradient} opacity-20 blur-[80px] pointer-events-none`} />
+
+      {/* Card */}
+      <div className="relative w-full max-w-sm rounded-3xl overflow-hidden border border-white/10 shadow-2xl">
+        {/* Top gradient band */}
+        <div className={`h-1 w-full bg-gradient-to-r ${theme.gradient}`} />
+
+        <div className="bg-[#0d0d0d] px-8 pt-10 pb-8 flex flex-col items-center text-center">
+
+          {/* Icon circle */}
+          <div className={`w-20 h-20 rounded-2xl bg-gradient-to-br ${theme.gradient} flex items-center justify-center shadow-lg mb-6`}>
+            <PartyPopper size={36} className="text-white" />
+          </div>
+
+          {/* Arabic heading */}
+          <p className="text-4xl font-arabic text-white mb-1 leading-tight">ما شاء الله</p>
+          <h3 className="text-base font-semibold text-white/80 tracking-wide mb-5">Daily Goal Reached</h3>
+
+          {/* Divider */}
+          <div className={`w-10 h-px bg-gradient-to-r ${theme.gradient} mb-5`} />
+
+          {/* Stat pill */}
+          <div className="bg-white/5 border border-white/10 rounded-2xl px-6 py-4 mb-6 w-full">
+            <p className="text-white/40 text-[10px] uppercase tracking-widest mb-1">Pages read today</p>
+            <p className={`text-4xl font-bold ${theme.text}`}>{pagesRead}</p>
+          </div>
+
+          <p className="text-white/40 text-sm leading-relaxed mb-8">
+            The angels are recording every page you read. Keep going — your dedication is your sadaqah.
+          </p>
+
+          {/* Buttons */}
           <button
             onClick={onContinue}
-            className={`w-full py-4 rounded-2xl font-bold text-black ${theme.bg} hover:opacity-90 transition-opacity shadow-[0_0_20px_rgba(255,255,255,0.1)]`}
+            className={`w-full py-4 rounded-2xl font-bold text-sm text-black bg-gradient-to-r ${theme.gradient} hover:opacity-90 active:scale-[0.98] transition-all shadow-lg mb-3`}
           >
             Continue Reciting
           </button>
           <button
             onClick={onClose}
-            className="w-full py-4 rounded-2xl font-bold text-white bg-white/5 hover:bg-white/10 transition-colors"
+            className="w-full py-3.5 rounded-2xl font-medium text-sm text-white/50 hover:text-white/80 transition-colors"
           >
             Close
           </button>
