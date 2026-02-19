@@ -17,7 +17,9 @@ export interface Ayah {
   ruku: number;
   hizbQuarter: number;
   sajda: boolean | any;
-  audio?: string; // Derived URL
+  audio?: string; // Per-ayah fallback URL
+  startTime?: number; // ms from start of surah audio file (surah mode)
+  endTime?: number;   // ms from start of surah audio file (surah mode)
   translations?: {
     en: string;
     transliteration?: string;
@@ -30,6 +32,7 @@ export interface SurahDetails {
   englishNameTranslation: string;
   name: string;
   ayahs: Ayah[];
+  audioUrl?: string; // Full surah audio URL (when qurancdn timing data is available)
 }
 
 export interface RamadanGoal {

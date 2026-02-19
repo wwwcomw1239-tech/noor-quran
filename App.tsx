@@ -701,9 +701,15 @@ export default function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const audioRef = useRef<HTMLAudioElement>(new Audio());
-  const preloadRef = useRef<HTMLAudioElement>(new Audio()); // Preload next ayah
+  const preloadRef = useRef<HTMLAudioElement>(new Audio()); // Per-ayah fallback: preload next ayah
   // Track whether playback was initiated by a user gesture (for PWA autoplay policy)
   const userGesturePlayRef = useRef(false);
+  // Surah-mode: URL of the currently loaded full-surah file (null = per-ayah mode)
+  const surahAudioUrlRef = useRef<string | null>(null);
+  // Surah-mode: explicit seek target set by user navigation (next/prev/tap ayah)
+  const seekRequestRef = useRef<number | null>(null);
+  // Surah-mode: prevents timeupdate from double-firing for the same ayah transition
+  const lastAdvancedIndexRef = useRef(-1);
 
   const [scrollToAyah, setScrollToAyah] = useState<number | null>(null); // Number In Surah
   const [todaysDua, setTodaysDua] = useState(DAILY_DUAS[0]);
@@ -980,6 +986,9 @@ export default function App() {
       const nextSurahName = surahs.find(s => s.number === nextNum)?.englishName || nextDetails.englishName;
       setPlayingSurahName(nextSurahName);
       setPlayingSurahNumber(nextNum);
+      // Update surah audio ref BEFORE setting index so the effect sees the right URL
+      surahAudioUrlRef.current = nextDetails.audioUrl ?? null;
+      lastAdvancedIndexRef.current = -1;
       setAudioQueue(nextDetails.ayahs);
       setCurrentAudioIndex(0);
     } else {
@@ -996,6 +1005,8 @@ export default function App() {
       const prevSurahName = surahs.find(s => s.number === prevNum)?.englishName || prevDetails.englishName;
       setPlayingSurahName(prevSurahName);
       setPlayingSurahNumber(prevNum);
+      surahAudioUrlRef.current = prevDetails.audioUrl ?? null;
+      lastAdvancedIndexRef.current = -1;
       setAudioQueue(prevDetails.ayahs);
       setCurrentAudioIndex(0);
     }
@@ -1006,39 +1017,92 @@ export default function App() {
     audioRef.current.onended = () => {
       const idx = currentAudioIndexRef.current;
       const queue = audioQueueRef.current;
-      if (idx < queue.length - 1) {
-        // Swap preloaded element into main
+      // Per-ayah mode only: swap preloaded element and play immediately (no React cycle gap)
+      if (!surahAudioUrlRef.current && idx < queue.length - 1) {
         swapToPreloaded();
-        // Play IMMEDIATELY — before React's state cycle — to eliminate any audible gap
         audioRef.current.playbackRate = playbackSpeedRef.current;
         audioRef.current.play().catch(e => console.error('Audio play error', e));
         setIsPlaying(true);
-        // Update index for UI (effect will skip play since audio is already running)
         setCurrentAudioIndex(idx + 1);
       } else {
+        // Surah mode (whole file ended) or last ayah — move to next surah
         loadNextSurahAudio();
       }
     };
   }, [loadNextSurahAudio, swapToPreloaded]);
 
+  // Surah mode: advance currentAudioIndex via timeupdate so ayah highlight tracks the audio
+  useEffect(() => {
+    const audio = audioRef.current;
+    const handleTimeUpdate = () => {
+      if (!surahAudioUrlRef.current) return; // per-ayah mode — nothing to do
+      const currentMs = audio.currentTime * 1000;
+      const queue = audioQueueRef.current;
+      const idx = currentAudioIndexRef.current;
+      if (
+        idx >= 0 &&
+        idx < queue.length - 1 &&
+        idx !== lastAdvancedIndexRef.current
+      ) {
+        const currentAyah = queue[idx];
+        if (currentAyah?.endTime != null && currentMs >= currentAyah.endTime) {
+          lastAdvancedIndexRef.current = idx; // prevent double-fire before React re-renders
+          setCurrentAudioIndex(idx + 1);
+        }
+      }
+    };
+    audio.addEventListener('timeupdate', handleTimeUpdate);
+    return () => audio.removeEventListener('timeupdate', handleTimeUpdate);
+  }, []); // refs keep values current — no deps needed
+
   // When track index changes, play the new track
   useEffect(() => {
     if (currentAudioIndex >= 0 && currentAudioIndex < audioQueue.length) {
-      // Skip if the initial play was already handled by playSurah directly
       if (userGesturePlayRef.current) {
         userGesturePlayRef.current = false;
-        preloadNext(audioQueue, currentAudioIndex);
+        // playSurah already started playback directly
+        if (!surahAudioUrlRef.current) preloadNext(audioQueue, currentAudioIndex);
         return;
       }
+
+      const audio = audioRef.current;
+
+      // ── Surah mode ──────────────────────────────────────────────────────────
+      if (surahAudioUrlRef.current) {
+        const surahUrl = surahAudioUrlRef.current;
+
+        if (seekRequestRef.current !== null) {
+          // User explicitly navigated to this ayah — seek to its start time
+          const seekMs = seekRequestRef.current;
+          seekRequestRef.current = null;
+          if (audio.src === surahUrl) {
+            audio.currentTime = seekMs / 1000;
+            if (audio.paused) {
+              audio.playbackRate = playbackSpeed;
+              audio.play().then(() => setIsPlaying(true)).catch(e => console.error(e));
+            }
+          }
+        } else if (audio.src !== surahUrl) {
+          // New surah loaded (e.g. auto-advance at end of surah)
+          audio.src = surahUrl;
+          audio.load();
+          audio.playbackRate = playbackSpeed;
+          audio.addEventListener('canplay', () => {
+            audio.play().then(() => setIsPlaying(true)).catch(e => console.error(e));
+          }, { once: true });
+        }
+        // else: timeupdate advanced the index — audio is already playing continuously
+        return;
+      }
+
+      // ── Per-ayah fallback mode ───────────────────────────────────────────────
       const ayah = audioQueue[currentAudioIndex];
       if (!ayah.audio) return;
-      const audio = audioRef.current;
       // Skip if already playing (started immediately in onended to avoid gap)
       if (!audio.paused) {
         preloadNext(audioQueue, currentAudioIndex);
         return;
       }
-      // Otherwise load and play (e.g. manual track change)
       if (audio.src === ayah.audio) {
         audio.playbackRate = playbackSpeed;
         audio.play()
@@ -1064,6 +1128,37 @@ export default function App() {
     audioRef.current.playbackRate = playbackSpeed;
   }, [playbackSpeed]);
 
+  // Save playing ayah as lastRead when user leaves the app (switches tabs, goes home, locks screen)
+  useEffect(() => {
+    const savePlayingAyah = () => {
+      const idx = currentAudioIndexRef.current;
+      const queue = audioQueueRef.current;
+      const surahNum = playingSurahNumberRef.current;
+      if (idx < 0 || !queue[idx] || !surahNum) return;
+      const ayahNum = queue[idx].numberInSurah;
+      try {
+        const raw = localStorage.getItem('noor_user');
+        if (raw) {
+          const u = JSON.parse(raw);
+          u.lastRead = { surah: surahNum, ayah: ayahNum };
+          localStorage.setItem('noor_user', JSON.stringify(u));
+        }
+      } catch { /* ignore */ }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) savePlayingAyah();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    // pagehide covers PWA/iOS closing the tab or locking screen
+    window.addEventListener('pagehide', savePlayingAyah);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', savePlayingAyah);
+    };
+  }, []); // refs keep values current — no deps needed
+
   // Sync play/pause state
   useEffect(() => {
     const audio = audioRef.current;
@@ -1075,19 +1170,46 @@ export default function App() {
   }, [isPlaying]);
 
   const playSurah = (surahDetails: SurahDetails, startIndex: number = 0) => {
-    // Play directly from user gesture to satisfy PWA autoplay policy
+    const audio = audioRef.current;
     const ayah = surahDetails.ayahs[startIndex];
-    if (ayah?.audio) {
-      const audio = audioRef.current;
-      audio.src = ayah.audio;
-      audio.load();
-      audio.playbackRate = playbackSpeed;
-      audio.play()
-        .then(() => setIsPlaying(true))
-        .catch(e => console.error("Audio play error", e));
-      // Preload next ayah
-      preloadNext(surahDetails.ayahs, startIndex);
+
+    if (surahDetails.audioUrl) {
+      // ── Surah mode: load one file, seek to the requested ayah ──
+      surahAudioUrlRef.current = surahDetails.audioUrl;
+      lastAdvancedIndexRef.current = -1;
+      seekRequestRef.current = null;
+
+      if (audio.src === surahDetails.audioUrl) {
+        // Same surah already loaded — just seek to the right position
+        if (ayah.startTime != null) audio.currentTime = ayah.startTime / 1000;
+        if (audio.paused) {
+          audio.playbackRate = playbackSpeed;
+          audio.play().then(() => setIsPlaying(true)).catch(e => console.error(e));
+        }
+      } else {
+        // Load the full surah file
+        audio.src = surahDetails.audioUrl;
+        audio.load();
+        audio.playbackRate = playbackSpeed;
+        audio.addEventListener('canplay', () => {
+          if (ayah.startTime != null && startIndex > 0) {
+            audio.currentTime = ayah.startTime / 1000;
+          }
+          audio.play().then(() => setIsPlaying(true)).catch(e => console.error(e));
+        }, { once: true });
+      }
+    } else {
+      // ── Per-ayah fallback mode ──
+      surahAudioUrlRef.current = null;
+      if (ayah?.audio) {
+        audio.src = ayah.audio;
+        audio.load();
+        audio.playbackRate = playbackSpeed;
+        audio.play().then(() => setIsPlaying(true)).catch(e => console.error('Audio play error', e));
+        preloadNext(surahDetails.ayahs, startIndex);
+      }
     }
+
     setPlayingSurahName(surahDetails.englishName);
     setPlayingSurahNumber(surahDetails.number);
     setAudioQueue(surahDetails.ayahs);
@@ -1098,7 +1220,13 @@ export default function App() {
 
   const handleNextTrack = () => {
     if (currentAudioIndex < audioQueue.length - 1) {
-      setCurrentAudioIndex(prev => prev + 1);
+      const nextIdx = currentAudioIndex + 1;
+      // In surah mode, set a seek request so the effect scrubs to the right position
+      if (surahAudioUrlRef.current) {
+        const nextAyah = audioQueue[nextIdx];
+        if (nextAyah?.startTime != null) seekRequestRef.current = nextAyah.startTime;
+      }
+      setCurrentAudioIndex(nextIdx);
     } else {
       // Last ayah — skip to next surah
       loadNextSurahAudio();
@@ -1107,7 +1235,12 @@ export default function App() {
 
   const handlePrevTrack = () => {
     if (currentAudioIndex > 0) {
-      setCurrentAudioIndex(prev => prev - 1);
+      const prevIdx = currentAudioIndex - 1;
+      if (surahAudioUrlRef.current) {
+        const prevAyah = audioQueue[prevIdx];
+        if (prevAyah?.startTime != null) seekRequestRef.current = prevAyah.startTime;
+      }
+      setCurrentAudioIndex(prevIdx);
     }
   };
 
