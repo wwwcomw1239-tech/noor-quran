@@ -263,6 +263,26 @@ const SurahView: React.FC<SurahViewProps> = ({
   const playingAyahNumber = currentAudioIndex >= 0 ? audioQueue[currentAudioIndex]?.number : null;
   const displayedAyahs = activeSurah.ayahs.slice(0, visibleCount);
 
+  // Auto-scroll to the currently playing ayah when it changes
+  useEffect(() => {
+    if (playingAyahNumber == null || !activeSurah) return;
+    const playingAyah = activeSurah.ayahs.find(a => a.number === playingAyahNumber);
+    if (!playingAyah) return;
+    const ayahInSurah = playingAyah.numberInSurah;
+    // Ensure the ayah is rendered (expand visible count if needed)
+    if (ayahInSurah > visibleCount) {
+      setVisibleCount(ayahInSurah + 10);
+    }
+    // Small delay to let DOM render if count was expanded
+    const timer = setTimeout(() => {
+      const el = document.getElementById(`ayah-${ayahInSurah}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [playingAyahNumber, activeSurah]);
+
   return (
     <div className="h-full overflow-y-auto pb-24 relative no-scrollbar">
       {/* Fixed Header */}
